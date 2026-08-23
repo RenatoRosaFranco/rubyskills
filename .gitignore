@@ -1,0 +1,39 @@
+# Bundler / Ruby
+*.gem
+.bundle/
+vendor/bundle/
+vendor/cache/
+
+# Build and install artifacts
+pkg/
+checksums/
+tmp/
+
+# Tests and coverage
+coverage/
+spec/reports/
+spec/examples.txt
+.rspec_status
+
+# YARD
+.yardoc/
+doc/
+
+# Editor / IDE
+.rake_tasks
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+
+# Debugger history
+.byebug_history
+
+# Local CLI workspace created by `ruby-skills init`
+Skillfile
+Skills.lock
+.ruby-skills/
+.rails-skills/

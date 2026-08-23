@@ -1,0 +1,5 @@
+--title "Ruby Skills"
+--markup markdown
+--no-private
+--output-dir doc
+lib/**/*.rb

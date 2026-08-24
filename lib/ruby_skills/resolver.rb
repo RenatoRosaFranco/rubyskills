@@ -38,7 +38,7 @@ module RubySkills
     def resolve(skill)
       if skill.path
         resolve_local(skill)
-      elsif skill.remote
+      elsif skill.github
         resolve_remote(skill)
       else
         raise RubySkills::Error,
@@ -49,21 +49,29 @@ module RubySkills
     private
 
     # @api private
-    # @return [void]
+    # @param skill [RubySkills::Manifest::Skill]
+    # @return [ResolvedSkill]
     # @raise [RubySkills::Error] if the local skill path is not a directory
-    def resolve_local
+    def resolve_local(skill)
       path = Pathname.new(skill.path).expand_path
 
       unless path.directory?
         raise RubySkills::Error,
               "Skill path does not exist: #{path}"
       end
+
+      ResolvedSkill.new(
+        name: skill.name,
+        path: path,
+        source: "path:#{path}"
+      )
     end
 
     # @api private
+    # @param skill [RubySkills::Manifest::Skill]
     # @return [ResolvedSkill] skill cloned into a temporary directory
     # @raise [RubySkills::Error] if the GitHub repository cannot be cloned
-    def resolve_remote
+    def resolve_remote(skill)
       directory = Pathname.new(
         Dir.mktmpdir("ruby-skills")
       )
@@ -74,6 +82,7 @@ module RubySkills
         "git",
         "clone",
         "--depth",
+        "1",
         repository,
         directory.to_s,
         out: File::NULL,

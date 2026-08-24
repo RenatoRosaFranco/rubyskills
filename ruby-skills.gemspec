@@ -6,25 +6,36 @@ Gem::Specification.new do |spec|
   spec.name = "ruby-skills"
   spec.version = RubySkills::VERSION
   spec.authors = ["Renato Franco"]
+  spec.email = ["renator.franco93@gmail.com"]
 
-  spec.summary = "Package manager for Ruby and Rails development skills"
+  spec.summary = "Package, share, and install Ruby engineering knowledge."
   spec.description = <<~DESCRIPTION
-    Ruby Skills provides a package management layer for installing,
-    updating, removing and sharing IA development skills for Ruby
-    and Ruby on Rails projects.
+    Ruby Skills is a package manager for distributing engineering
+    knowledge to Ruby development tools and coding agents.
   DESCRIPTION
 
-  spec.homepage = "https://github.com/renatofranco/ruby-skills"
+  spec.homepage = "https://rubyskills.org"
   spec.license = "MIT"
 
-  spec.required_ruby_version = ">= 3.2"
+  spec.required_ruby_version = ">= 3.1.0"
 
-  spec.files = Dir[
-    "lib/**/*",
-    "bin/*",
-    "README.md",
-    "LICENSE"
-  ]
+  spec.metadata = {
+    "homepage_uri" => spec.homepage,
+    "source_code_uri" => "https://github.com/renatofranco/ruby-skills",
+    "rubygems_mfa_required" => "true"
+  }
+
+  spec.files = Dir.chdir(__dir__) do
+    `git ls-files -z`.split("\x0").reject do |file|
+      file.start_with?(
+        "test/",
+        "spec/",
+        "features/",
+        ".git",
+        ".github"
+      )
+    end
+  end
 
   spec.bindir = "bin"
   spec.executables = ["ruby-skills"]
@@ -34,4 +45,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rspec", "~> 3.12"
   spec.add_development_dependency "yard", "~> 0.9"
+  spec.add_development_dependency "rubocop", "~> 1.58"
+  spec.add_development_dependency "rubocop-performance", "~> 1.20"
+  spec.add_development_dependency "rubocop-rspec", "~> 2.26"
 end

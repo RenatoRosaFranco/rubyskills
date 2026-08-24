@@ -65,7 +65,7 @@ module RubySkills
 
     desc "list", "List installed skills"
     option :json, type: :boolean, default: false, aliases: "-j",
-      desc: "Output installed skills as JSON"
+                  desc: "Output installed skills as JSON"
     # Print installed skills from the lockfile.
     #
     # With +--json+, emit a machine-readable payload instead of a table.

@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
 
-  spec.files = Dir.chdir(__dir__) do
+  spec.files = Dir.chdir(__dir__) {
     `git ls-files -z`.split("\x0").reject do |file|
       file.start_with?(
         "test/",
@@ -35,7 +35,7 @@ Gem::Specification.new do |spec|
         ".github"
       )
     end
-  end
+  }
 
   spec.bindir = "bin"
   spec.executables = ["ruby-skills"]
@@ -44,8 +44,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency "thor", "~> 1.3"
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rspec", "~> 3.12"
-  spec.add_development_dependency "yard", "~> 0.9"
   spec.add_development_dependency "rubocop", "~> 1.58"
   spec.add_development_dependency "rubocop-performance", "~> 1.20"
-  spec.add_development_dependency "rubocop-rspec", "~> 2.26"
+  spec.add_development_dependency "rubocop-rspec", "~> 3.0"
+  spec.add_development_dependency "yard", "~> 0.9"
 end

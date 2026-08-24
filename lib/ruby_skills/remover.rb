@@ -29,7 +29,7 @@ module RubySkills
       end
 
       adapters.each do |adapter|
-        Adapters::adapter.new.remove(name)
+        adapter.new.remove(name)
       end
 
       FileUtils.rm_rf(path)

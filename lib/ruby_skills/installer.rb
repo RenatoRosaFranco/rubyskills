@@ -44,9 +44,7 @@ module RubySkills
       return manifest.skills if skill_name.nil?
 
       skill = manifest.skills.find { |declared| declared.name == skill_name }
-      unless skill
-        raise RubySkills::Error, "Skill `#{skill_name}` is not in the Skillfile"
-      end
+      raise RubySkills::Error, "Skill `#{skill_name}` is not in the Skillfile" unless skill
 
       [skill]
     end
@@ -62,7 +60,9 @@ module RubySkills
       FileUtils.mkdir_p(@config.skills_path)
       FileUtils.cp_r(resolved.path, destination)
 
-      adapters.each { |adapter| adapter.new.install(resolved.name, destination) }
+      adapters.each do |adapter|
+        adapter.new.install(resolved.name, destination)
+      end
 
       Lockfile.new(config: @config).add(
         resolved.name,

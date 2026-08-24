@@ -9,7 +9,10 @@ module RubySkills
   # Remote skills are cloned from GitHub into a temporary directory.
   #
   # @example Resolve a declared skill
-  #   skill = RubySkills::Manifest::Skill.new(name: "rails-performance", path: "./skills/rails-performance")
+  #   skill = RubySkills::Manifest::Skill.new(
+  #     name: "rails-performance",
+  #     path: "./skills/rails-performance"
+  #   )
   #   RubySkills::Resolver.new.resolve(skill)
   #
   # @see RubySkills::Manifest::Skill

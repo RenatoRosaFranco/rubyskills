@@ -7,7 +7,9 @@ require "pathname"
 require "tmpdir"
 require "yaml"
 
-Dir[File.expand_path("support/**/*.rb", __dir__)].sort.each { |path| require path }
+Dir[File.expand_path("support/**/*.rb", __dir__)].each do |path|
+  require path
+end
 
 RSpec.configure do |config|
   config.example_status_persistence_file_path = "spec/examples.txt"

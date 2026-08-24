@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "thor"
 
 module RubySkills
@@ -63,13 +64,22 @@ module RubySkills
     end
 
     desc "list", "List installed skills"
+    option :json, type: :boolean, default: false, aliases: "-j",
+      desc: "Output installed skills as JSON"
     # Print installed skills from the lockfile.
+    #
+    # With +--json+, emit a machine-readable payload instead of a table.
     #
     # @return [void]
     def list
-      lockfile = Lockfile.new
+      skills = Lockfile.new.skills
 
-      if lockfile.skills.empty?
+      if options[:json]
+        puts JSON.generate(list_payload(skills))
+        return
+      end
+
+      if skills.empty?
         say "No skills installed."
         return
       end
@@ -77,7 +87,7 @@ module RubySkills
       say "Installed skills:"
       say ""
 
-      lockfile.skills.each do |skill|
+      skills.each do |name, data|
         say "#{name.ljust(35)} #{data["version"]}"
       end
     end
@@ -114,6 +124,23 @@ module RubySkills
     # @return [void]
     def version
       say "ruby-skills #{RubySkills::VERSION}"
+    end
+
+    no_commands do
+      # @api private
+      # @param skills [Hash{String => Hash}] lockfile skill map
+      # @return [Hash] JSON-serializable list payload
+      def list_payload(skills)
+        {
+          "skills" => skills.map do |name, data|
+            {
+              "name" => name,
+              "version" => data["version"],
+              "source" => data["source"]
+            }
+          end
+        }
+      end
     end
   end
 end

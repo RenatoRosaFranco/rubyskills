@@ -115,6 +115,33 @@ ruby -Ilib bin/ruby-skills help
 
 Library code is under `lib/ruby_skills/`. The executable is `bin/ruby-skills`.
 
+## Releasing
+
+Publishing uses [Trusted Publishing](https://guides.rubygems.org/trusted-publishing/) (OIDC). There is no RubyGems API key in GitHub.
+
+One-time setup:
+
+1. Create a GitHub Environment named `release` on this repository.
+2. On RubyGems.org, add a pending trusted publisher for `ruby-skills`:
+   [Create pending trusted publisher](https://rubygems.org/profile/oidc/pending_trusted_publishers/new)
+   - Repository owner: `renatofranco`
+   - Repository name: `ruby-skills`
+   - Workflow filename: `push_gem.yml`
+   - Environment: `release`
+
+Then, for each version:
+
+1. Bump `RubySkills::VERSION` in `lib/ruby_skills/version.rb`.
+2. Commit the bump.
+3. Tag and push:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The `Push gem` workflow builds the gem and uploads it to RubyGems.org.
+
 ## License
 
 MIT

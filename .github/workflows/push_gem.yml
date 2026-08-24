@@ -1,0 +1,69 @@
+# Publish ruby-skills to RubyGems.org via Trusted Publishing (OIDC).
+# No API key is stored in GitHub. Configure the publisher once on RubyGems.org:
+#   https://rubygems.org/profile/oidc/pending_trusted_publishers/new
+# Fields:
+#   Gem: ruby-skills
+#   Repository owner: renatofranco
+#   Repository name: ruby-skills
+#   Workflow filename: push_gem.yml
+#   Environment: release
+#
+# Also create a GitHub Environment named "release" on this repository.
+name: Push gem
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    name: Push gem to RubyGems.org
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    environment: release
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Verify tag matches gem version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          expected="v$(ruby -e 'require_relative "lib/ruby_skills/version"; print RubySkills::VERSION')"
+          actual="${GITHUB_REF_NAME}"
+          if [ "$expected" != "$actual" ]; then
+            echo "Tag $actual does not match VERSION $expected"
+            exit 1
+          fi
+
+      - name: Run RSpec
+        run: bundle exec rspec
+
+      - name: Run RuboCop
+        run: bundle exec rubocop
+
+      - name: Configure RubyGems credentials
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
+
+      - name: Build gem
+        run: bundle exec rake build
+
+      - name: Push gem
+        run: gem push pkg/*.gem

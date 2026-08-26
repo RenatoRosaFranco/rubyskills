@@ -11,6 +11,51 @@ RSpec.describe RubySkills::CLI do
     end
   end
 
+  describe "config" do
+    it "prints the default registry when no config file exists" do
+      with_user_config_home do
+        expect {
+          described_class.start(["config"])
+        }.to output("registry: https://rubyskills.org\n").to_stdout
+      end
+    end
+
+    it "writes registry to ~/.config/ruby-skills/config.yml" do
+      with_user_config_home do |directory|
+        expect {
+          described_class.start(
+            ["config", "registry", "https://staging.rubyskills.org"]
+          )
+        }.to output("registry: https://staging.rubyskills.org\n").to_stdout
+
+        expect(directory.join("config.yml")).to be_file
+        expect(YAML.safe_load(directory.join("config.yml").read)).to eq(
+          "registry" => "https://staging.rubyskills.org"
+        )
+      end
+    end
+
+    it "prints the stored registry" do
+      with_user_config_home do
+        RubySkills::UserConfig.load.update_registry!("http://localhost:3000")
+
+        expect {
+          described_class.start(%w[config registry])
+        }.to output("registry: http://localhost:3000\n").to_stdout
+      end
+    end
+
+    it "rejects an invalid registry URL" do
+      with_user_config_home do
+        expect {
+          expect {
+            described_class.start(["config", "registry", "not-a-url"])
+          }.to output(/Invalid registry URL/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+  end
+
   describe "list" do
     it "prints a message when no skills are installed" do
       with_tmp_project do

@@ -293,10 +293,35 @@ RSpec.describe RubySkills::Registry::Client do
 
   describe "#inspect" do
     it "does not leak the API token" do
-      client = described_class.new(token: "rsk_secret", http: RubySkillsSpec::FakeRegistryHttp.new)
+      client = described_class.new(
+        base_url: "https://rubyskills.org",
+        token: "rsk_secret",
+        http: RubySkillsSpec::FakeRegistryHttp.new
+      )
 
       expect(client.inspect).to include("[FILTERED]")
       expect(client.inspect).not_to include("rsk_secret")
+    end
+  end
+
+  describe "default registry" do
+    it "reads registry from the user config file" do
+      with_user_config_home do
+        RubySkills::UserConfig.load.update_registry!("http://localhost:3000")
+        client = described_class.new(http: RubySkillsSpec::FakeRegistryHttp.new)
+
+        expect(client.base_url).to eq("http://localhost:3000")
+      end
+    end
+
+    it "prefers RUBY_SKILLS_REGISTRY_URL over the config file" do
+      with_user_config_home do
+        RubySkills::UserConfig.load.update_registry!("http://localhost:3000")
+        ENV["RUBY_SKILLS_REGISTRY_URL"] = "https://staging.rubyskills.org"
+        client = described_class.new(http: RubySkillsSpec::FakeRegistryHttp.new)
+
+        expect(client.base_url).to eq("https://staging.rubyskills.org")
+      end
     end
   end
 

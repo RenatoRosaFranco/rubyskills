@@ -27,4 +27,5 @@ RSpec.configure do |config|
   end
 
   config.include RubySkillsSpec::TmpProject
+  config.include RubySkillsSpec::UserConfigHome
 end

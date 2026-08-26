@@ -151,6 +151,31 @@ module RubySkills
       exit 1
     end
 
+    desc "config [KEY] [VALUE]", "Get or set user configuration"
+    # Show or persist user settings from +~/.config/ruby-skills/config.yml+.
+    #
+    # With no arguments, print the current file. With +registry+, show or set
+    # the registry origin (production, staging, or localhost).
+    #
+    # @param key [String, nil]
+    # @param value [String, nil]
+    # @return [void]
+    # @raise [SystemExit] when the key or value is invalid
+    def config(key = nil, value = nil)
+      case key
+      when nil
+        say "registry: #{UserConfig.load.registry}"
+      when "registry"
+        configure_registry(value)
+      else
+        say "Error: unknown config key: #{key}", :red
+        exit 1
+      end
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
+    end
+
     desc "version", "Display Ruby Skills version"
     # Print the installed gem version.
     #
@@ -262,6 +287,16 @@ module RubySkills
         return format("%.1f KB", value) if value < 1024
 
         format("%.1f MB", value / 1024)
+      end
+
+      # @api private
+      # @param value [String, nil]
+      # @return [void]
+      def configure_registry(value)
+        settings = UserConfig.load
+        settings.update_registry!(value) if value
+
+        say "registry: #{settings.registry}"
       end
 
       # @api private

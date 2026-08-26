@@ -171,8 +171,10 @@ module RubySkills
 
       # @return [String]
       def default_base_url
-        value = ENV.fetch(URL_ENV, nil).to_s.strip
-        value.empty? ? DEFAULT_URL : value
+        env = ENV.fetch(URL_ENV, nil).to_s.strip
+        return env.chomp("/") unless env.empty?
+
+        UserConfig.load.registry
       end
 
       # @return [String, nil]

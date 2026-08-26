@@ -64,7 +64,7 @@ module RubySkills
         adapter.new.install(resolved.name, destination)
       end
 
-      Lockfile.new(config: @config).add(
+      LegacyLockfile.new(config: @config).add(
         resolved.name,
         version: skill.version || "unspecified",
         source: resolved.source

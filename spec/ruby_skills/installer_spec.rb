@@ -70,7 +70,7 @@ RSpec.describe RubySkills::Installer do
           .with("rails-performance", destination)
           .at_least(:once)
 
-        lock = RubySkills::Lockfile.new(
+        lock = RubySkills::LegacyLockfile.new(
           config: RubySkills::Config.new(root: root)
         )
         expect(lock.skills["rails-performance"]).to include(

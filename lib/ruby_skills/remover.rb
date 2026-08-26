@@ -6,7 +6,7 @@ module RubySkills
   # @example Remove an installed skill
   #   RubySkills::Remover.new.remove("rails-performance")
   #
-  # @see RubySkills::Lockfile
+  # @see RubySkills::LegacyLockfile
   # @see RubySkills::Adapters
   # @since 0.1.0
   class Remover
@@ -34,7 +34,7 @@ module RubySkills
 
       FileUtils.rm_rf(path)
 
-      Lockfile.new.remove(name)
+      LegacyLockfile.new.remove(name)
 
       puts "✓ Removed #{name}"
     end

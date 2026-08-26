@@ -83,7 +83,7 @@ module RubySkills
     #
     # @return [void]
     def list
-      skills = Lockfile.new.skills
+      skills = LegacyLockfile.new.skills
 
       if options[:json]
         puts JSON.generate(list_payload(skills))

@@ -24,7 +24,7 @@ RSpec.describe RubySkills::Remover do
         FileUtils.mkdir_p(skill_path)
         skill_path.join("SKILL.md").write("# skill\n")
 
-        RubySkills::Lockfile.new(config: config).add(
+        RubySkills::LegacyLockfile.new(config: config).add(
           "rails-performance",
           version: "0.1.0",
           source: "path:#{skill_path}"
@@ -38,7 +38,7 @@ RSpec.describe RubySkills::Remover do
         }.to output(/Removed rails-performance/).to_stdout
 
         expect(skill_path).not_to exist
-        expect(RubySkills::Lockfile.new.skills).not_to have_key("rails-performance")
+        expect(RubySkills::LegacyLockfile.new.skills).not_to have_key("rails-performance")
       end
     end
   end

@@ -216,7 +216,7 @@ RSpec.describe RubySkills::CLI do
 
     it "prints a table of installed skills" do
       with_tmp_project do |root|
-        RubySkills::Lockfile.new(
+        RubySkills::LegacyLockfile.new(
           config: RubySkills::Config.new(root: root)
         ).add(
           "rails-performance",
@@ -234,7 +234,7 @@ RSpec.describe RubySkills::CLI do
 
     it "prints JSON when --json is given" do
       with_tmp_project do |root|
-        RubySkills::Lockfile.new(
+        RubySkills::LegacyLockfile.new(
           config: RubySkills::Config.new(root: root)
         ).add(
           "rails-performance",

@@ -14,6 +14,7 @@ module RubySkills
       DEPENDENCIES = "DEPENDENCIES"
       SKILL_LINE = %r{\A  ([a-z0-9_-]+/[a-z0-9_-]+) \((.+)\)\z}
       CHECKSUM_LINE = /\A    sha256:\s*(.+)\z/
+      NESTED_DEPENDENCY_LINE = %r{\A    ([a-z0-9_-]+/[a-z0-9_-]+)(?: \((.+)\))?\z}
       REMOTE_LINE = /\A  remote:\s*(.+)\z/
       DEPENDENCY_LINE = %r{\A  ([a-z0-9_-]+/[a-z0-9_-]+)(?: \((.+)\))?\z}
       CHECKSUM_HEX = /\A[0-9a-f]{64}\z/i
@@ -85,9 +86,41 @@ module RubySkills
         raise_at(number, "Duplicated locked skill #{name.inspect}") if seen[name]
         seen[name] = true
         version = parse_version(match[2], number)
+        dependencies = read_nested_dependencies
         checksum = read_checksum!(name, number)
 
-        LockedSkill.new(name: name, version: version, checksum: checksum)
+        LockedSkill.new(
+          name: name,
+          version: version,
+          checksum: checksum,
+          dependencies: dependencies
+        )
+      end
+
+      # @return [Array<Dependency>]
+      def read_nested_dependencies
+        dependencies = []
+        seen = {}
+        loop do
+          skip_blanks
+          text = peek_text
+          break if text.nil? || text == DEPENDENCIES
+          break if CHECKSUM_LINE.match?(text.to_s)
+
+          match = NESTED_DEPENDENCY_LINE.match(text.to_s)
+          break unless match
+
+          number, = read_line
+          nested_name = match[1]
+          raise_at(number, "Duplicated dependency #{nested_name.inspect}") if seen[nested_name]
+
+          seen[nested_name] = true
+          dependencies << Dependency.new(
+            name: nested_name,
+            requirement: parse_requirement(nested_name, match[2], number)
+          )
+        end
+        dependencies
       end
 
       # @param name [String]

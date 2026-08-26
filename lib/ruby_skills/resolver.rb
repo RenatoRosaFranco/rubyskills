@@ -3,15 +3,15 @@
 require "rubygems"
 
 module RubySkills
-  # Resolves every {Skillfile} dependency to one published registry version.
+  # Resolves every Skillfile dependency, including the transitive graph.
   #
-  # +install+ is not +update+. When a Skills.lock already pins a version that
-  # still satisfies the Skillfile and is still available, that pin is kept.
-  # A newer compatible release is chosen only when the pin is unusable or
-  # when +update: true+.
+  # Direct Skillfile requirements are combined with requirements declared by
+  # selected SkillVersions. One version is chosen per skill: the highest
+  # {Gem::Version} that satisfies every requirement, unless a still-valid
+  # Skills.lock pin is kept (install is not update).
   #
-  # Yanked and unpublished releases are ignored. Versions are compared with
-  # {Gem::Version}, never lexicographically. Nothing is downloaded or written.
+  # Yanked and unpublished releases are ignored. Registry metadata is cached
+  # for the session. Nothing is downloaded or written.
   #
   # @example
   #   resolution = RubySkills::Resolver.new(
@@ -23,9 +23,6 @@ module RubySkills
   #
   # @since 0.1.0
   class Resolver # rubocop:disable Metrics/ClassLength
-    # Raised when a declared skill cannot be resolved to a published version.
-    class Error < RubySkills::Error; end
-
     # @param skillfile [Skillfile]
     # @param client [Registry::Client]
     # @param lockfile [Lockfile, nil]
@@ -36,110 +33,244 @@ module RubySkills
       @client = client
       @lockfile = lockfile
       @update = update
+      @catalog = Catalog.new(client)
+      @terms = Hash.new { |hash, key| hash[key] = [] }
+      @selected = {}
+      @stack = []
     end
 
     # @return [Resolution]
-    # @raise [Error]
+    # @raise [ResolutionError]
     def resolve
-      skills = @skillfile.dependencies.map { |dependency| resolve_dependency(dependency) }
+      @skillfile.dependencies.each do |dependency|
+        add_term(Term.new(name: dependency.name, requirement: dependency.requirement))
+      end
+
+      search_remaining
 
       Resolution.new(
         source: @skillfile.source,
-        skills: skills,
+        skills: finalized_skills,
         dependencies: @skillfile.dependencies
       )
     end
 
     private
 
-    # @param dependency [Dependency]
-    # @return [ResolvedSkill]
-    def resolve_dependency(dependency)
-      locked = locked_skill(dependency)
-      return fetch_release(dependency, locked.version) if keep_locked?(dependency, locked)
+    # @param name [String]
+    # @return [void]
+    def decide(name)
+      raise CircularDependency, @stack + [name] if @stack.include?(name)
+      return if selected_compatible?(name)
 
-      resolve_latest(dependency)
+      try_versions(name)
     end
 
-    # @param dependency [Dependency]
-    # @return [LockedSkill, nil]
-    def locked_skill(dependency)
-      return if @lockfile.nil? || updating?(dependency)
+    # @param name [String]
+    # @return [void]
+    def try_versions(name)
+      last_error = nil
+      versions = candidate_versions(name)
+      raise incompatibility_error(name) if versions.empty?
 
-      @lockfile.find(dependency.name)
-    end
+      resolved = false
+      versions.each do |version|
+        snapshot = snapshot_state
+        begin
+          assign_with_deps!(name, version)
+          search_remaining
+          resolved = true
+          break
+        rescue ResolutionError => e
+          raise if e.is_a?(SkillNotFound)
 
-    # @param dependency [Dependency]
-    # @return [Boolean]
-    def updating?(dependency)
-      @update == true || @update == dependency.name
-    end
-
-    # @param dependency [Dependency]
-    # @param locked [LockedSkill, nil]
-    # @return [Boolean]
-    def keep_locked?(dependency, locked)
-      return false if locked.nil?
-      return false unless dependency.requirement.satisfied_by?(locked.version)
-
-      available_release?(fetch_version(dependency.name, locked.version))
-    end
-
-    # @param dependency [Dependency]
-    # @return [ResolvedSkill]
-    def resolve_latest(dependency)
-      skill = load_skill(dependency.name)
-      candidates = compatible_versions(skill.versions, dependency.requirement)
-
-      candidates.each do |version|
-        release = fetch_version(dependency.name, version)
-        return to_resolved(dependency, release) if available_release?(release)
+          last_error = e
+          restore_state(snapshot)
+        end
       end
 
-      raise unsatisfiable_error(dependency)
+      return if resolved
+
+      raise last_error || incompatibility_error(name)
     end
 
-    # @param dependency [Dependency]
+    # @param name [String]
     # @param version [Gem::Version]
-    # @return [ResolvedSkill]
-    def fetch_release(dependency, version)
-      release = fetch_version(dependency.name, version)
-      raise unsatisfiable_error(dependency) unless available_release?(release)
+    # @return [void]
+    def assign_with_deps!(name, version)
+      @stack.push(name)
+      assign!(name, version)
+      dependencies_of(@selected[name]).each do |dependency|
+        add_term(
+          Term.new(
+            name: dependency.name,
+            requirement: dependency.requirement,
+            parent_name: name
+          )
+        )
+        decide(dependency.name)
+      end
+    ensure
+      @stack.pop if @stack.last == name
+    end
 
-      to_resolved(dependency, release)
+    # @return [void]
+    def search_remaining
+      loop do
+        name = next_unresolved
+        break unless name
+
+        decide(name)
+      end
+    end
+
+    # @return [String, nil]
+    def next_unresolved
+      @terms.keys.sort.find { |name| !selected_compatible?(name) }
     end
 
     # @param name [String]
-    # @return [Registry::Skill]
-    def load_skill(name)
-      @client.get_skill(name)
-    rescue Registry::Error => e
-      raise Error, "Could not find skill #{name} in the registry" if not_found?(e)
+    # @param version [Gem::Version]
+    # @return [void]
+    def assign!(name, version)
+      retract_parent_terms!(name)
+      release = @catalog.version(name, version)
+      unless available_release?(release)
+        raise NoCompatibleVersion,
+              "Could not find a version of #{name} that satisfies " \
+              "#{requirement_label(name)}"
+      end
+      if blank?(release.checksum)
+        raise ResolutionError, "Missing checksum for #{name} (#{release.version})"
+      end
 
-      raise Error, "Failed to resolve #{name}: #{e.message}"
+      @selected[name] = build_resolved(name, release)
+    end
+
+    # Drop requirements introduced by a previous version of +name+.
+    #
+    # @param name [String]
+    # @return [void]
+    def retract_parent_terms!(name)
+      @terms.each_key do |dep_name|
+        @terms[dep_name].reject! { |term| term.parent_name == name }
+      end
+      @terms.delete_if { |_dep_name, terms| terms.empty? }
+    end
+
+    # @param term [Term]
+    # @return [void]
+    def add_term(term)
+      @terms[term.name] << term
     end
 
     # @param name [String]
-    # @param version [Gem::Version, String]
-    # @return [Registry::Version, nil]
-    def fetch_version(name, version)
-      @client.get_version(name, version.to_s)
-    rescue Registry::Error => e
-      return if not_found?(e)
+    # @return [Array<Gem::Version>]
+    def candidate_versions(name)
+      listed = listed_versions(name).select { |version| terms_satisfied?(name, version) }
+      locked = preferred_lock(name)
+      if locked && listed.include?(locked)
+        return [locked] + listed.reject { |version| version == locked }
+      end
 
-      raise Error, "Failed to resolve #{name} (#{version}): #{e.message}"
+      listed
     end
 
-    # @param versions [Array<String>]
-    # @param requirement [Gem::Requirement]
+    # @param name [String]
     # @return [Array<Gem::Version>] highest first
-    def compatible_versions(versions, requirement)
-      versions
-        .select { |value| Gem::Version.correct?(value) }
-        .map { |value| Gem::Version.new(value) }
-        .select { |version| requirement.satisfied_by?(version) }
-        .sort
-        .reverse
+    def listed_versions(name)
+      listed = @catalog.skill(name).versions.filter_map { |value|
+        next unless Gem::Version.correct?(value)
+
+        Gem::Version.new(value)
+      }
+      listed.uniq.sort.reverse
+    end
+
+    # @param name [String]
+    # @return [Gem::Version, nil]
+    def preferred_lock(name)
+      return if updating?(name)
+
+      locked = @lockfile&.find(name)
+      return unless locked
+      return unless terms_satisfied?(name, locked.version)
+
+      locked.version
+    end
+
+    # @param name [String]
+    # @return [Boolean]
+    def updating?(name)
+      @update == true || @update == name
+    end
+
+    # @param name [String]
+    # @param version [Gem::Version]
+    # @return [Boolean]
+    def terms_satisfied?(name, version)
+      @terms[name].all? { |term| term.requirement.satisfied_by?(version) }
+    end
+
+    # @param name [String]
+    # @return [Boolean]
+    def selected_compatible?(name)
+      selected = @selected[name]
+      selected && terms_satisfied?(name, selected.version)
+    end
+
+    # @param skill [ResolvedSkill]
+    # @return [Array<Dependency>]
+    def dependencies_of(skill)
+      Array(skill.dependencies)
+    end
+
+    # @param name [String]
+    # @param release [Registry::Version]
+    # @return [ResolvedSkill]
+    def build_resolved(name, release)
+      ResolvedSkill.new(
+        name: name,
+        version: release.version,
+        checksum: release.checksum,
+        source: @skillfile.source,
+        download_url: release.download_url,
+        dependencies: parse_release_dependencies(release)
+      )
+    end
+
+    # @param release [Registry::Version]
+    # @return [Array<Dependency>]
+    def parse_release_dependencies(release)
+      Array(release.dependencies).filter_map { |row| dependency_from(row) }
+    end
+
+    # @param row [Dependency, Hash, #name]
+    # @return [Dependency, nil]
+    def dependency_from(row)
+      if row.is_a?(Dependency)
+        row
+      elsif row.is_a?(Hash)
+        name = row["name"] || row[:name]
+        return if name.to_s.strip.empty?
+
+        Dependency.new(name: name.to_s, requirement: requirement_from(row))
+      elsif row.respond_to?(:name)
+        Dependency.new(name: row.name, requirement: requirement_from(row))
+      end
+    end
+
+    # @param row [Hash, #requirement]
+    # @return [Gem::Requirement]
+    def requirement_from(row)
+      value = if row.is_a?(Hash)
+                row["requirement"] || row[:requirement]
+              else
+                row.requirement
+              end
+      return value if value.is_a?(Gem::Requirement)
+
+      Gem::Requirement.new(value.nil? || value.to_s.strip.empty? ? ">= 0" : value)
     end
 
     # @param release [Registry::Version, nil]
@@ -158,42 +289,86 @@ module RubySkills
       release.published_at.nil? || release.published_at == false
     end
 
-    # @param dependency [Dependency]
-    # @param release [Registry::Version]
-    # @return [ResolvedSkill]
-    def to_resolved(dependency, release)
-      if blank?(release.checksum)
-        raise Error, "Missing checksum for #{dependency.name} (#{release.version})"
-      end
-
-      ResolvedSkill.new(
-        name: dependency.name,
-        version: release.version,
-        checksum: release.checksum,
-        source: @skillfile.source,
-        download_url: release.download_url
-      )
-    end
-
-    # @param error [Registry::Error]
-    # @return [Boolean]
-    def not_found?(error)
-      error.code == "not_found" || error.status == 404
-    end
-
     # @param value [String, nil]
     # @return [Boolean]
     def blank?(value)
       value.to_s.strip.empty?
     end
 
-    # @param dependency [Dependency]
-    # @return [Error]
-    def unsatisfiable_error(dependency)
-      Error.new(
-        "Could not find a version of #{dependency.name} that satisfies " \
-        "#{dependency.requirement}"
-      )
+    # @return [Hash]
+    def snapshot_state
+      {
+        selected: @selected.dup,
+        terms: @terms.transform_values(&:dup)
+      }
+    end
+
+    # @param snapshot [Hash]
+    # @return [void]
+    def restore_state(snapshot)
+      @selected = snapshot[:selected].dup
+      @terms = Hash.new { |hash, key| hash[key] = [] }
+      snapshot[:terms].each { |name, terms| @terms[name] = terms.dup }
+    end
+
+    # @param name [String]
+    # @return [ResolutionError]
+    def incompatibility_error(name)
+      terms = @terms[name]
+      if terms.size > 1
+        VersionConflict.new(name, terms)
+      else
+        NoCompatibleVersion.new(
+          "Could not find a version of #{name} that satisfies #{requirement_label(name)}"
+        )
+      end
+    end
+
+    # @param name [String]
+    # @return [String]
+    def requirement_label(name)
+      terms = @terms[name]
+      return Gem::Requirement.default.to_s if terms.empty?
+      return terms.first.requirement.to_s if terms.size == 1
+
+      terms.map { |term| term.requirement.to_s }.join(", ")
+    end
+
+    # @return [Array<ResolvedSkill>]
+    def finalized_skills
+      reachable_names.sort.filter_map { |name|
+        skill = @selected[name]
+        next unless skill
+
+        ResolvedSkill.new(
+          name: skill.name,
+          version: skill.version,
+          checksum: skill.checksum,
+          source: skill.source,
+          download_url: skill.download_url,
+          dependencies: skill.dependencies,
+          required_by: Array(@terms[name]).sort_by { |term|
+            [term.source_label, term.requirement.to_s]
+          }
+        )
+      }
+    end
+
+    # @return [Array<String>]
+    def reachable_names
+      queue = @skillfile.dependencies.map(&:name)
+      seen = []
+      until queue.empty?
+        name = queue.shift
+        next if seen.include?(name)
+
+        seen << name
+        skill = @selected[name]
+        next unless skill
+
+        dependencies_of(skill).each { |dependency| queue << dependency.name }
+      end
+      seen
     end
   end
 end

@@ -27,21 +27,30 @@ module RubySkills
     # @return [String] registry origin
     attr_reader :source
 
-    # @return [Array<Dependency>] future runtime dependencies of this skill
+    # @return [Array<Dependency>] runtime dependencies of this skill version
     attr_reader :dependencies
+
+    # @return [Array<Resolver::Term>] why this skill is in the graph
+    attr_reader :required_by
 
     # @param name [String]
     # @param version [Gem::Version, String]
     # @param checksum [String]
     # @param download_url [String, nil]
     # @param source [String]
-    def initialize(name:, version:, checksum:, source:, download_url: nil)
+    # @param dependencies [Array<Dependency>]
+    # @param required_by [Array<Resolver::Term>]
+    def initialize( # rubocop:disable Metrics/ParameterLists
+      name:, version:, checksum:, source:,
+      download_url: nil, dependencies: [], required_by: []
+    )
       @name = name
       @version = version.is_a?(Gem::Version) ? version : Gem::Version.new(version)
       @checksum = self.class.normalize_checksum(checksum)
       @download_url = download_url
       @source = source
-      @dependencies = []
+      @dependencies = Array(dependencies).freeze
+      @required_by = Array(required_by).freeze
     end
 
     # @param value [String]
@@ -64,7 +73,8 @@ module RubySkills
         version == other.version &&
         checksum == other.checksum &&
         download_url == other.download_url &&
-        source == other.source
+        source == other.source &&
+        dependencies == other.dependencies
     end
   end
 end

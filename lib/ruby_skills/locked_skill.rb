@@ -5,7 +5,7 @@ require "rubygems"
 module RubySkills
   # An exact skill version recorded in {Lockfile}.
   #
-  # +dependencies+ is reserved for future transitive edges and is empty today.
+  # +dependencies+ are the runtime requirements of this locked version.
   #
   # @example
   #   locked.version   # => Gem::Version.new("1.3.2")
@@ -21,7 +21,7 @@ module RubySkills
     # @return [String] +sha256:<hex>+
     attr_reader :checksum
 
-    # @return [Array<Dependency>] future runtime dependencies of this skill
+    # @return [Array<Dependency>] runtime dependencies of this locked version
     attr_reader :dependencies
 
     # @param name [String]
@@ -32,7 +32,7 @@ module RubySkills
       @name = name
       @version = version.is_a?(Gem::Version) ? version : Gem::Version.new(version)
       @checksum = checksum
-      @dependencies = Array(dependencies)
+      @dependencies = Array(dependencies).sort_by(&:name).freeze
     end
 
     # @param other [Object]

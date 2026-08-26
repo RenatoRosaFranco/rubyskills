@@ -103,11 +103,10 @@ module RubySkills
     # @return [Boolean]
     def stale_against?(skillfile)
       wanted = skillfile.dependencies.map(&:name)
-      locked = @skills.map(&:name)
       declared = @dependencies.map(&:name)
 
-      return true if wanted.sort != locked.sort
       return true if wanted.sort != declared.sort
+      return true unless wanted.all? { |name| locked?(name) }
 
       skillfile.dependencies.any? { |dependency| !satisfies?(dependency) }
     end

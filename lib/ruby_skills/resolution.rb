@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module RubySkills
-  # Exact versions chosen for every {Skillfile} dependency.
+  # Exact versions chosen for every {Skillfile} dependency and its transitives.
   #
   # Does not install files or write +Skills.lock+.
   #
@@ -36,7 +36,12 @@ module RubySkills
       Lockfile.new(
         source: @source,
         skills: @skills.map { |skill|
-          LockedSkill.new(name: skill.name, version: skill.version, checksum: skill.checksum)
+          LockedSkill.new(
+            name: skill.name,
+            version: skill.version,
+            checksum: skill.checksum,
+            dependencies: skill.dependencies
+          )
         },
         dependencies: @dependencies
       )

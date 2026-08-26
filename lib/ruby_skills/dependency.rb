@@ -23,5 +23,19 @@ module RubySkills
       @name = name
       @requirement = requirement
     end
+
+    # @param other [Object]
+    # @return [Boolean]
+    def ==(other)
+      other.is_a?(self.class) &&
+        name == other.name &&
+        requirement == other.requirement
+    end
+    alias eql? ==
+
+    # @return [Integer]
+    def hash
+      [self.class, name, requirement].hash
+    end
   end
 end

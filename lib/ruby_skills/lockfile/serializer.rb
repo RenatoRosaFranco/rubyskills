@@ -16,6 +16,9 @@ module RubySkills
         lines = ["RUBY SKILLS", "  remote: #{@lockfile.source}", ""]
         @lockfile.skills.each do |skill|
           lines << "  #{skill.name} (#{skill.version})"
+          skill.dependencies.sort_by(&:name).each do |dependency|
+            lines << "    #{dependency.name} (#{dependency.requirement})"
+          end
           lines << "    sha256: #{skill.checksum.delete_prefix("sha256:")}"
           lines << ""
         end

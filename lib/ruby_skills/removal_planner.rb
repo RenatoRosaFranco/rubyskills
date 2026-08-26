@@ -6,9 +6,8 @@ module RubySkills
   # Decides which locked and installed skills are still required after a
   # Skillfile dependency is removed.
   #
-  # Today the resolved graph is only direct Skillfile dependencies. Walking
-  # {ResolvedSkill#dependencies} is ready for transitive edges later — skills
-  # that remain reachable are not treated as removable.
+  # Walking {ResolvedSkill#dependencies} keeps every skill still reachable
+  # from the remaining Skillfile. Unreachable transitives are removable.
   #
   # @since 0.1.0
   class RemovalPlanner

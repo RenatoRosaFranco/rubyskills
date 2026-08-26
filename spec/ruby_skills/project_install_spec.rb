@@ -23,7 +23,7 @@ RSpec.describe RubySkills::ProjectInstall do
     ).build
   end
 
-  def publish(http, root, name:, versions:)
+  def publish(http, root, name:, versions:, dependencies: {})
     artifacts = versions.to_h { |version|
       artifact = build_artifact(
         seed_skill(root, name: name, version: version),
@@ -46,12 +46,15 @@ RSpec.describe RubySkills::ProjectInstall do
       }
     )
     artifacts.each do |version, artifact|
-      stub_version(http, name, version, artifact)
+      stub_version(
+        http, name, version, artifact,
+        dependencies: dependencies[version] || []
+      )
     end
     artifacts
   end
 
-  def stub_version(http, name, version, artifact)
+  def stub_version(http, name, version, artifact, dependencies: [])
     namespace, skill = name.split("/", 2)
     http.stub(
       :get,
@@ -65,7 +68,10 @@ RSpec.describe RubySkills::ProjectInstall do
         "published_at" => "2026-08-01T00:00:00Z",
         "yanked" => false,
         "download_url" =>
-          "https://rubyskills.org/api/v1/skills/#{namespace}/#{skill}/versions/#{version}/download"
+          "https://rubyskills.org/api/v1/skills/#{namespace}/#{skill}/versions/#{version}/download",
+        "dependencies" => dependencies.map { |dep_name, requirement|
+          { "name" => dep_name, "requirement" => requirement }
+        }
       }
     )
     http.stub(
@@ -301,6 +307,82 @@ RSpec.describe RubySkills::ProjectInstall do
       expect(root.join(".ruby-skills", "rails", "request-specs", "2.1.4")).to be_directory
       expect(RubySkills::Lockfile.load(root.join("Skills.lock")).locked?("rails/request-specs"))
         .to be true
+    end
+  end
+
+  it "installs transitive dependencies and records them under their parents" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      conventions = publish(
+        http, root, name: "rails/conventions", versions: %w[1.4.0 1.5.0 1.8.0 2.0.0]
+      )
+      publish(
+        http,
+        root,
+        name: "rails/request-specs",
+        versions: %w[2.1.0],
+        dependencies: { "2.1.0" => [["rails/conventions", ">= 1.5"]] }
+      )
+      publish(
+        http,
+        root,
+        name: "rails/security",
+        versions: %w[1.3.0],
+        dependencies: { "1.3.0" => [["rails/conventions", "~> 1.0"]] }
+      )
+      write_skillfile(root, <<~RUBY)
+        source "https://rubyskills.org"
+        skill "rails/request-specs", "~> 2.0"
+        skill "rails/security", "~> 1.0"
+      RUBY
+
+      install(root, http)
+      lockfile = RubySkills::Lockfile.load(root.join("Skills.lock"))
+
+      expect(lockfile.find("rails/conventions").version).to eq(Gem::Version.new("1.8.0"))
+      expect(lockfile.dependencies.map(&:name)).to eq(
+        ["rails/request-specs", "rails/security"]
+      )
+      expect(lockfile.find("rails/request-specs").dependencies).to eq(
+        [
+          RubySkills::Dependency.new(
+            name: "rails/conventions",
+            requirement: Gem::Requirement.new(">= 1.5")
+          )
+        ]
+      )
+      expect(root.join(".ruby-skills", "rails", "conventions", "1.8.0")).to be_directory
+      expect(lockfile.serialize).to include("sha256: #{conventions.fetch("1.8.0").checksum}")
+    end
+  end
+
+  it "does not write Skills.lock when requirements conflict" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "ruby/foo", versions: %w[1.5.0 2.0.0])
+      publish(
+        http,
+        root,
+        name: "ruby/a",
+        versions: %w[1.0.0],
+        dependencies: { "1.0.0" => [["ruby/foo", "~> 1.0"]] }
+      )
+      publish(
+        http,
+        root,
+        name: "ruby/b",
+        versions: %w[1.0.0],
+        dependencies: { "1.0.0" => [["ruby/foo", ">= 2.0"]] }
+      )
+      write_skillfile(root, <<~RUBY)
+        source "https://rubyskills.org"
+        skill "ruby/a", "~> 1.0"
+        skill "ruby/b", "~> 1.0"
+      RUBY
+
+      expect { install(root, http) }.to raise_error(RubySkills::Resolver::VersionConflict)
+      expect(root.join("Skills.lock")).not_to exist
+      expect(root.join(".ruby-skills")).not_to exist
     end
   end
 end

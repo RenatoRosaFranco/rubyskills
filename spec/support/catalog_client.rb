@@ -9,14 +9,15 @@ module RubySkillsSpec
       @releases = {}
     end
 
-    def add(name, version, checksum: nil, yanked: false, published: true)
+    def add(name, version, checksum: nil, yanked: false, published: true, dependencies: []) # rubocop:disable Metrics/ParameterLists
       @releases[name] ||= {}
       @releases[name][version.to_s] = {
         version: version.to_s,
         checksum: checksum || Digest::SHA256.hexdigest("#{name}@#{version}"),
         yanked: yanked,
         published: published,
-        download_url: download_url_for(name, version)
+        download_url: download_url_for(name, version),
+        dependencies: normalize_dependencies(dependencies)
       }
       self
     end
@@ -47,11 +48,30 @@ module RubySkillsSpec
         manifest: {},
         published_at: release[:published] ? "2026-08-01T00:00:00Z" : nil,
         yanked: release[:yanked],
-        download_url: release[:download_url]
+        download_url: release[:download_url],
+        dependencies: release[:dependencies]
       )
     end
 
     private
+
+    def normalize_dependencies(dependencies)
+      Array(dependencies).map { |item|
+        case item
+        when RubySkills::Dependency
+          { "name" => item.name, "requirement" => item.requirement.to_s }
+        when Array
+          { "name" => item[0].to_s, "requirement" => item[1].to_s }
+        when Hash
+          {
+            "name" => (item[:name] || item["name"]).to_s,
+            "requirement" => (item[:requirement] || item["requirement"]).to_s
+          }
+        else
+          raise ArgumentError, "Invalid dependency #{item.inspect}"
+        end
+      }
+    end
 
     def available?(release)
       release[:published] && !release[:yanked]
@@ -71,6 +91,27 @@ module RubySkillsSpec
 
     def not_found(message)
       RubySkills::Registry::Error.new(message, code: "not_found", status: 404)
+    end
+  end
+
+  # Counts registry reads so resolution tests can assert session caching.
+  class CountingCatalogClient
+    attr_reader :skill_calls, :version_calls
+
+    def initialize(inner)
+      @inner = inner
+      @skill_calls = Hash.new(0)
+      @version_calls = Hash.new(0)
+    end
+
+    def get_skill(name)
+      @skill_calls[name] += 1
+      @inner.get_skill(name)
+    end
+
+    def get_version(name, version)
+      @version_calls[[name, version.to_s]] += 1
+      @inner.get_version(name, version)
     end
   end
 end

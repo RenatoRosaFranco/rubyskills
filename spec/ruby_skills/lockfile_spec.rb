@@ -336,5 +336,94 @@ RSpec.describe RubySkills::Lockfile do
     it "is true when a dependency was removed from the Skillfile" do
       expect(lockfile.stale_against?(skillfile_with)).to be true
     end
+
+    it "is false when the lock contains extra transitive skills" do
+      with_transitives = build_lock(
+        skills: [
+          conventions,
+          locked("rails/request-specs", "2.1.0", "request-specs")
+        ],
+        dependencies: [dep("rails/request-specs", "~> 2.0")]
+      )
+
+      expect(
+        with_transitives.stale_against?(skillfile_with(dep("rails/request-specs", "~> 2.0")))
+      ).to be false
+    end
+  end
+
+  describe "transitive dependencies" do
+    def locked_with_deps(name, version, seed, *requirements)
+      RubySkills::LockedSkill.new(
+        name: name,
+        version: version,
+        checksum: checksum(seed),
+        dependencies: requirements.map { |dep_name, req| dep(dep_name, req) }
+      )
+    end
+
+    it "serializes nested requirements under each parent skill" do
+      lockfile = build_lock(
+        skills: [
+          locked_with_deps("rails/conventions", "1.8.0", "conventions"),
+          locked_with_deps(
+            "rails/request-specs", "2.1.0", "request-specs",
+            ["rails/conventions", ">= 1.5"]
+          ),
+          locked_with_deps(
+            "rails/security", "1.3.0", "security",
+            ["rails/conventions", "~> 1.0"]
+          )
+        ],
+        dependencies: [
+          dep("rails/request-specs", "~> 2.0"),
+          dep("rails/security", "~> 1.0")
+        ]
+      )
+
+      expect(lockfile.serialize).to eq(<<~LOCK)
+        RUBY SKILLS
+          remote: https://rubyskills.org
+
+          rails/conventions (1.8.0)
+            sha256: #{sha("conventions")}
+
+          rails/request-specs (2.1.0)
+            rails/conventions (>= 1.5)
+            sha256: #{sha("request-specs")}
+
+          rails/security (1.3.0)
+            rails/conventions (~> 1.0)
+            sha256: #{sha("security")}
+
+        DEPENDENCIES
+          rails/request-specs (~> 2.0)
+          rails/security (~> 1.0)
+      LOCK
+    end
+
+    it "round-trips nested dependencies and keeps DEPENDENCIES as Skillfile directs" do
+      with_tmp_project do |root|
+        original = build_lock(
+          skills: [
+            locked_with_deps("rails/conventions", "1.8.0", "conventions"),
+            locked_with_deps(
+              "rails/request-specs", "2.1.0", "request-specs",
+              ["rails/conventions", ">= 1.5"]
+            )
+          ],
+          dependencies: [dep("rails/request-specs", "~> 2.0")]
+        )
+        path = root.join("Skills.lock")
+        original.write(path)
+        loaded = described_class.load(path)
+
+        expect(loaded.find("rails/request-specs").dependencies).to eq(
+          [dep("rails/conventions", ">= 1.5")]
+        )
+        expect(loaded.dependencies.map(&:name)).to eq(["rails/request-specs"])
+        expect(loaded.serialize).to eq(original.serialize)
+      end
+    end
   end
 end

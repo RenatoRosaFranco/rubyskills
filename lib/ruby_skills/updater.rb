@@ -77,17 +77,10 @@ module RubySkills
     # @return [Array<Change>]
     def detect_changes(resolution, lockfile)
       resolution.skills.filter_map { |skill|
-        next if targeted_elsewhere?(skill)
         next unless stale?(skill, lockfile)
 
         Change.new(skill: skill, from: lockfile&.find(skill.name)&.version)
       }
-    end
-
-    # @param skill [ResolvedSkill]
-    # @return [Boolean]
-    def targeted_elsewhere?(skill)
-      !@name.nil? && skill.name != @name
     end
 
     # @param skill [ResolvedSkill]

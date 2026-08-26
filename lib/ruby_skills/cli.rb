@@ -132,6 +132,25 @@ module RubySkills
       exit 1 unless result.valid?
     end
 
+    desc "build [PATH]", "Build a .rskill artifact from a local Ruby Skill"
+    option :output, type: :string, default: "pkg", aliases: "-o",
+                    desc: "Directory to write the artifact"
+    # Validate +PATH+ and write a deterministic +.rskill+ archive.
+    #
+    # Default destination is +pkg/+. No archive is written when validation fails.
+    #
+    # @param path [String] skill directory (defaults to +.+ )
+    # @return [void]
+    # @raise [SystemExit] with status 1 when the skill is invalid
+    def build(path = ".")
+      result = Build.new(path, output: options[:output]).run
+      print_build(result)
+      exit 1 unless result.success?
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
+    end
+
     desc "version", "Display Ruby Skills version"
     # Print the installed gem version.
     #
@@ -196,6 +215,53 @@ module RubySkills
         say ""
         say "  cd #{result.name}" unless result.in_place
         say "  ruby-skills validate"
+      end
+
+      # @api private
+      # @param result [RubySkills::Build::Result]
+      # @return [void]
+      def print_build(result)
+        say "Building #{result.label}"
+        say ""
+
+        if result.success?
+          print_build_success(result)
+        else
+          result.failures.each do |failure|
+            say "✗ #{failure}"
+          end
+          say ""
+          say "Skill is invalid."
+        end
+      end
+
+      # @api private
+      # @param result [RubySkills::Build::Result]
+      # @return [void]
+      def print_build_success(result)
+        say "✓ manifest valid"
+        say "✓ #{result.file_count} files included"
+        say "✓ artifact created"
+        say ""
+        say result.output_path
+        say ""
+        say "SHA256:"
+        say result.artifact.checksum
+        say ""
+        say "Size:"
+        say format_size(result.artifact.size)
+      end
+
+      # @api private
+      # @param bytes [Integer]
+      # @return [String]
+      def format_size(bytes)
+        return "#{bytes} B" if bytes < 1024
+
+        value = bytes.to_f / 1024
+        return format("%.1f KB", value) if value < 1024
+
+        format("%.1f MB", value / 1024)
       end
 
       # @api private

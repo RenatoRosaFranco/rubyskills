@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 RSpec.describe RubySkills::CLI do
   describe "version" do
     it "prints the gem version" do
@@ -210,6 +212,106 @@ RSpec.describe RubySkills::CLI do
             )
           ).to_stdout
         }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+  end
+
+  describe "build" do
+    def seed_skill(root)
+      skill = root.join("request-specs")
+      RubySkills::Generators::Skill.new(root: root).create("rails/request-specs")
+      skill.join("references", "http.md").write("# http\n")
+      skill.join("references", "status.md").write("# status\n")
+      skill
+    end
+
+    it "writes a .rskill to pkg/ and prints the build report" do
+      with_tmp_project do |root|
+        skill = seed_skill(root)
+        artifact = root.join("pkg", "rails-request-specs-0.1.0.rskill")
+
+        expect {
+          described_class.start(["build", skill.to_s])
+        }.to output(
+          a_string_including(
+            "Building rails/request-specs 0.1.0",
+            "✓ manifest valid",
+            "✓ 4 files included",
+            "✓ artifact created",
+            "pkg/rails-request-specs-0.1.0.rskill",
+            "SHA256:",
+            "Size:"
+          ).and(satisfy { |text|
+            text.include?(Digest::SHA256.file(artifact).hexdigest)
+          })
+        ).to_stdout
+
+        expect(artifact).to be_file
+      end
+    end
+
+    it "writes the artifact to --output" do
+      with_tmp_project do |root|
+        skill = seed_skill(root)
+
+        expect {
+          described_class.start(["build", skill.to_s, "--output", "dist/"])
+        }.to output(
+          a_string_including(
+            "dist/rails-request-specs-0.1.0.rskill",
+            "✓ artifact created"
+          )
+        ).to_stdout
+
+        expect(root.join("dist", "rails-request-specs-0.1.0.rskill")).to be_file
+        expect(root.join("pkg")).not_to exist
+      end
+    end
+
+    it "builds the current directory when PATH is omitted" do
+      with_tmp_project do |root|
+        RubySkills::Generators::Skill.new(root: root).create(
+          "rails/request-specs",
+          in_place: true
+        )
+
+        expect {
+          described_class.start(["build"])
+        }.to output(%r{pkg/rails-request-specs-0.1.0.rskill}).to_stdout
+
+        expect(root.join("pkg", "rails-request-specs-0.1.0.rskill")).to be_file
+      end
+    end
+
+    it "does not write an artifact when validation fails" do
+      with_tmp_project do |root|
+        skill = root.join("request-specs")
+        FileUtils.mkdir_p(skill)
+        skill.join("skill.yml").write(
+          {
+            "name" => "request-specs",
+            "namespace" => "rails",
+            "version" => "foo",
+            "summary" => "Broken skill.",
+            "entrypoint" => "SKILL.md",
+            "files" => ["SKILL.md"]
+          }.to_yaml
+        )
+
+        expect {
+          expect {
+            described_class.start(["build", skill.to_s])
+          }.to output(
+            a_string_including(
+              "Building rails/request-specs foo",
+              %(✗ version: "foo" is invalid),
+              "Skill is invalid."
+            )
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+
+        expect(root.join("pkg")).not_to exist
+        expect(Dir["#{root}/**/*.rskill"]).to eq([])
       end
     end
   end

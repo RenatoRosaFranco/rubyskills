@@ -71,12 +71,29 @@ module RubySkills
       new(path)
     end
 
-    # @param path [String, Pathname] skill directory or +skill.yml+ path
+    # Parse +skill.yml+ bytes from an artifact without writing them to disk.
+    #
+    # When +members+ is given, entrypoint existence is checked against those
+    # archive paths instead of the filesystem.
+    #
+    # @param contents [String] YAML text of +skill.yml+
+    # @param members [Hash{String => String}, nil] archive path => contents
+    # @return [Manifest]
+    # @raise [RubySkills::Error] if the YAML cannot be parsed
+    def self.from_yaml(contents, members: nil)
+      new(nil, yaml: contents, members: members)
+    end
+
+    # @param path [String, Pathname, nil] skill directory or +skill.yml+ path
+    # @param yaml [String, nil] YAML text when loading from an artifact
+    # @param members [Hash{String => String}, nil] archive path => contents
     # @raise [RubySkills::Error] if the path or YAML cannot be read
-    def initialize(path)
+    def initialize(path, yaml: nil, members: nil)
       @errors = []
-      @root = resolve_root(path)
-      @raw = read_yaml
+      @members = members
+      @virtual = !yaml.nil?
+      @root = @virtual ? Pathname.new(".").expand_path : resolve_root(path)
+      @raw = @virtual ? parse_yaml(yaml) : read_yaml
       apply_fields
       validate
     end
@@ -128,8 +145,16 @@ module RubySkills
       yaml_path = @root.join(FILENAME)
       raise RubySkills::Error, "skill.yml not found in #{@root}" unless yaml_path.file?
 
+      parse_yaml(yaml_path.read)
+    end
+
+    # @api private
+    # @param contents [String]
+    # @return [Hash]
+    # @raise [RubySkills::Error]
+    def parse_yaml(contents)
       loaded = YAML.safe_load(
-        yaml_path.read,
+        contents,
         permitted_classes: [],
         permitted_symbols: [],
         aliases: false
@@ -244,7 +269,28 @@ module RubySkills
         return
       end
 
-      target = @root.join(path).expand_path
+      validate_entrypoint_presence
+    end
+
+    # @api private
+    # @return [void]
+    def validate_entrypoint_presence
+      if @members
+        unless @members.key?(@entrypoint)
+          @errors << "entrypoint file does not exist: #{@entrypoint}"
+        end
+        return
+      end
+
+      return if @virtual
+
+      validate_entrypoint_on_disk
+    end
+
+    # @api private
+    # @return [void]
+    def validate_entrypoint_on_disk
+      target = @root.join(@entrypoint).expand_path
       unless inside_root?(target)
         @errors << "entrypoint must not contain path traversal"
         return

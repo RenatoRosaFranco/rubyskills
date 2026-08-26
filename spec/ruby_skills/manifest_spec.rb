@@ -159,6 +159,32 @@ RSpec.describe RubySkills::Manifest do
     end
   end
 
+  describe ".from_yaml" do
+    it "parses skill.yml without a skill directory" do
+      members = { "skill.yml" => valid_yaml, "SKILL.md" => "# skill\n" }
+      manifest = described_class.from_yaml(valid_yaml, members: members)
+
+      expect(manifest).to be_valid
+      expect(manifest.full_name).to eq("rails/request-specs")
+    end
+
+    it "rejects a missing entrypoint against archive members" do
+      yaml = <<~YAML
+        name: request-specs
+        namespace: rails
+        version: 0.1.0
+        summary: Missing entrypoint file.
+        entrypoint: missing.md
+      YAML
+      members = { "skill.yml" => yaml }
+
+      manifest = described_class.from_yaml(yaml, members: members)
+
+      expect(manifest).not_to be_valid
+      expect(manifest.errors).to include("entrypoint file does not exist: missing.md")
+    end
+  end
+
   describe "validation" do
     it "rejects missing required fields" do
       with_tmp_project do |root|

@@ -89,6 +89,23 @@ RSpec.describe RubySkills::CLI do
         expect(RubySkills::Credentials.load.token).to be_nil
       end
     end
+
+    it "does not treat --token without a value as a login" do
+      with_user_config_home do
+        expect {
+          expect {
+            described_class.start(["login", "--token"])
+          }.to output(
+            a_string_including(
+              "Browser sign-in is not available yet.",
+              "ruby-skills login --token rsk_..."
+            )
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+
+        expect(RubySkills::Credentials.load.token).to be_nil
+      end
+    end
   end
 
   describe "logout" do

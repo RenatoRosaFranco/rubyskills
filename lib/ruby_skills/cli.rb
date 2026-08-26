@@ -226,12 +226,13 @@ module RubySkills
     # @return [void]
     # @raise [SystemExit] when +--token+ is missing or invalid
     def login
-      if options[:token].to_s.strip.empty?
+      token = options[:token]
+      unless token.is_a?(String) && !token.strip.empty?
         print_login_help
         exit 1
       end
 
-      Credentials.load.update_token!(options[:token])
+      Credentials.load.update_token!(token)
       say "Logged in."
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red

@@ -19,6 +19,7 @@ module RubySkills
     FILENAME = "credentials.yml"
     FILE_MODE = 0o600
     DIRECTORY_MODE = 0o700
+    TOKEN_PREFIX = "rsk_"
 
     # @return [Pathname]
     def self.path
@@ -56,10 +57,15 @@ module RubySkills
 
     # @param token [String]
     # @return [void]
-    # @raise [RubySkills::Error] if +token+ is blank
+    # @raise [RubySkills::Error] if +token+ is blank or not an +rsk_+ token
     def update_token!(token)
-      raw = token.to_s.strip
+      raise RubySkills::Error, "Token is required" unless token.is_a?(String)
+
+      raw = token.strip
       raise RubySkills::Error, "Token is required" if raw.empty?
+      unless raw.start_with?(TOKEN_PREFIX) && raw.length > TOKEN_PREFIX.length
+        raise RubySkills::Error, "Token must start with rsk_"
+      end
 
       @data["token"] = raw
       save

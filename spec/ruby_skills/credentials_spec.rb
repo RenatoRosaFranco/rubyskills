@@ -31,6 +31,22 @@ RSpec.describe RubySkills::Credentials do
         }.to raise_error(RubySkills::Error, "Token is required")
       end
     end
+
+    it "rejects a non-string token" do
+      with_user_config_home do
+        expect {
+          described_class.load.update_token!(true)
+        }.to raise_error(RubySkills::Error, "Token is required")
+      end
+    end
+
+    it "rejects a token that does not start with rsk_" do
+      with_user_config_home do
+        expect {
+          described_class.load.update_token!("true")
+        }.to raise_error(RubySkills::Error, "Token must start with rsk_")
+      end
+    end
   end
 
   describe "#token" do

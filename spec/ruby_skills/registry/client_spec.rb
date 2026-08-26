@@ -8,6 +8,7 @@ RSpec.describe RubySkills::Registry::Client do
       "name" => "rails/request-specs",
       "summary" => "Request spec conventions for Rails apps.",
       "latest_version" => "1.4.2",
+      "downloads" => 12_842,
       "categories" => [{ "slug" => "testing", "name" => "Testing" }],
       "versions" => %w[1.4.2 1.3.0]
     }
@@ -96,6 +97,7 @@ RSpec.describe RubySkills::Registry::Client do
         name: "rails/request-specs",
         summary: "Request spec conventions for Rails apps.",
         latest_version: "1.4.2",
+        downloads: 12_842,
         versions: %w[1.4.2 1.3.0]
       )
       expect(skill.categories.first).to have_attributes(slug: "testing", name: "Testing")

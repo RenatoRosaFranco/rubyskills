@@ -55,7 +55,7 @@ module RubySkills
 
     # Public skill metadata from +GET /api/v1/skills/:namespace/:skill+.
     Skill = Struct.new(
-      :name, :summary, :latest_version, :categories, :versions,
+      :name, :summary, :latest_version, :categories, :versions, :downloads,
       keyword_init: true
     ) do
       # @param payload [Hash]
@@ -66,7 +66,8 @@ module RubySkills
           summary: payload["summary"],
           latest_version: payload["latest_version"],
           categories: Array(payload["categories"]).map { |row| Category.from_payload(row) },
-          versions: Array(payload["versions"])
+          versions: Array(payload["versions"]),
+          downloads: payload.fetch("downloads", 0).to_i
         )
       end
     end
@@ -110,7 +111,6 @@ module RubySkills
       end
     end
 
-    # Downloaded +.rskill+ bytes.
     # Downloaded +.rskill+ bytes.
     class Download
       # @return [String]

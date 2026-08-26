@@ -151,6 +151,21 @@ module RubySkills
       exit 1
     end
 
+    desc "info SKILL", "Show registry metadata for a skill"
+    # Look up +SKILL+ on the registry without installing it.
+    #
+    # @param name [String] +namespace/name+
+    # @return [void]
+    # @raise [SystemExit] when the skill cannot be found
+    def info(name)
+      result = Info.new(name).run
+      print_info(result)
+      exit 1 unless result.success?
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
+    end
+
     desc "publish [PATH]", "Publish a local Ruby Skill to the registry"
     # Validate, package, and upload +PATH+ as an immutable registry version.
     #
@@ -383,6 +398,53 @@ module RubySkills
         say ""
         say "Size:"
         say format_size(result.artifact.size)
+      end
+
+      # @api private
+      # @param result [RubySkills::Info::Result]
+      # @return [void]
+      def print_info(result)
+        unless result.success?
+          say "Error: #{result.error.message}", :red
+          return
+        end
+
+        print_info_success(result.skill)
+      end
+
+      # @api private
+      # @param skill [RubySkills::Registry::Skill]
+      # @return [void]
+      def print_info_success(skill)
+        say skill.name
+        say ""
+        say skill.summary.to_s
+        say ""
+        say "Latest"
+        say skill.latest_version if skill.latest_version
+        say ""
+        say "Categories"
+        skill.categories.each do |category|
+          say category.name
+        end
+        say ""
+        say "Versions"
+        skill.versions.each do |version|
+          say version
+        end
+        say ""
+        say "Downloads"
+        say format_count(skill.downloads)
+        say ""
+        say "Install"
+        say "ruby-skills install #{skill.name}"
+      end
+
+      # @api private
+      # @param number [Integer]
+      # @return [String]
+      def format_count(number)
+        number.to_i.to_s.reverse.gsub(/(\d{3})(?=\d)/, "\\1,").reverse
       end
 
       # @api private

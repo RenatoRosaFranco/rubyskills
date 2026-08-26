@@ -410,6 +410,80 @@ RSpec.describe RubySkills::CLI do
     end
   end
 
+  describe "info" do
+    def stub_registry_client(http)
+      client = RubySkills::Registry::Client.new(
+        base_url: "https://rubyskills.org",
+        http: http
+      )
+      allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+    end
+
+    it "prints registry metadata without writing files" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        http.stub(
+          :get,
+          "/api/v1/skills/rails/request-specs",
+          status: 200,
+          body: {
+            "name" => "rails/request-specs",
+            "summary" => "Practices for writing Rails request specs.",
+            "latest_version" => "1.4.2",
+            "downloads" => 12_842,
+            "categories" => [{ "slug" => "testing", "name" => "Testing" }],
+            "versions" => %w[1.4.2 1.4.1 1.3.0]
+          }
+        )
+        stub_registry_client(http)
+
+        expect {
+          described_class.start(["info", "rails/request-specs"])
+        }.to output(<<~TEXT).to_stdout
+          rails/request-specs
+
+          Practices for writing Rails request specs.
+
+          Latest
+          1.4.2
+
+          Categories
+          Testing
+
+          Versions
+          1.4.2
+          1.4.1
+          1.3.0
+
+          Downloads
+          12,842
+
+          Install
+          ruby-skills install rails/request-specs
+        TEXT
+
+        expect(root.children).to be_empty
+      end
+    end
+
+    it "exits 1 when the skill is missing" do
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      http.stub(
+        :get,
+        "/api/v1/skills/rails/missing",
+        status: 404,
+        body: { "error" => { "code" => "not_found", "message" => "Skill not found" } }
+      )
+      stub_registry_client(http)
+
+      expect {
+        expect {
+          described_class.start(["info", "rails/missing"])
+        }.to output(/Error: Skill not found/).to_stdout
+      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+    end
+  end
+
   describe "publish" do
     def seed_skill(root)
       skill = root.join("request-specs")

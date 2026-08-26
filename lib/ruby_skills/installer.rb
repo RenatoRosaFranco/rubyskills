@@ -13,7 +13,7 @@ module RubySkills
   #   RubySkills::Installer.new.install("rails-performance")
   #
   # @see RubySkills::LegacySkillfile
-  # @see RubySkills::Resolver
+  # @see RubySkills::LegacyResolver
   # @since 0.1.0
   class Installer
     # @param config [RubySkills::Config] project paths used during install
@@ -53,7 +53,7 @@ module RubySkills
     # @param skill [RubySkills::LegacySkillfile::Skill]
     # @return [void]
     def install_skill(skill)
-      resolved = Resolver.new.resolve(skill)
+      resolved = LegacyResolver.new.resolve(skill)
       destination = @config.skills_path.join(resolved.name)
 
       FileUtils.rm_rf(destination)

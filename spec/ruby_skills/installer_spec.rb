@@ -41,15 +41,15 @@ RSpec.describe RubySkills::Installer do
         FileUtils.mkdir_p(source)
         source.join("SKILL.md").write("# rails-performance\n")
 
-        resolved = RubySkills::Resolver::ResolvedSkill.new(
+        resolved = RubySkills::LegacyResolver::ResolvedSkill.new(
           name: "rails-performance",
           path: source,
           source: "path:#{source}"
         )
 
         adapter = instance_double(RubySkills::Adapters::Claude)
-        allow(RubySkills::Resolver).to receive(:new)
-          .and_return(instance_double(RubySkills::Resolver, resolve: resolved))
+        allow(RubySkills::LegacyResolver).to receive(:new)
+          .and_return(instance_double(RubySkills::LegacyResolver, resolve: resolved))
         allow(RubySkills::Adapters::Claude).to receive(:new).and_return(adapter)
         allow(RubySkills::Adapters::Codex).to receive(:new).and_return(adapter)
         allow(RubySkills::Adapters::Cursor).to receive(:new).and_return(adapter)

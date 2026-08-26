@@ -1,106 +1,191 @@
 # frozen_string_literal: true
 
-require "tmpdir"
+require "rubygems"
 
 module RubySkills
-  # Turns a declared skill into a local directory that can be installed.
+  # Resolves every {Skillfile} dependency to one published registry version.
   #
-  # Local skills are resolved from {RubySkills::LegacySkillfile::Skill#path}.
-  # Remote skills are cloned from GitHub into a temporary directory.
+  # +install+ is not +update+. When a Skills.lock already pins a version that
+  # still satisfies the Skillfile and is still available, that pin is kept.
+  # A newer compatible release is chosen only when the pin is unusable or
+  # when +update: true+.
   #
-  # @example Resolve a declared skill
-  #   skill = RubySkills::LegacySkillfile::Skill.new(
-  #     name: "rails-performance",
-  #     path: "./skills/rails-performance"
-  #   )
-  #   RubySkills::Resolver.new.resolve(skill)
+  # Yanked and unpublished releases are ignored. Versions are compared with
+  # {Gem::Version}, never lexicographically. Nothing is downloaded or written.
   #
-  # @see RubySkills::LegacySkillfile::Skill
+  # @example
+  #   resolution = RubySkills::Resolver.new(
+  #     skillfile: skillfile,
+  #     lockfile: lockfile,
+  #     client: client
+  #   ).resolve
+  #   resolution.find("rails/conventions").version
+  #
   # @since 0.1.0
   class Resolver
-    # Skill directory ready to be installed.
-    #
-    # @!attribute [rw] name
-    #   @return [String] skill identifier
-    # @!attribute [rw] path
-    #   @return [Pathname] local directory containing the skill
-    # @!attribute [rw] source
-    #   @return [String] origin used to resolve the skill
-    ResolvedSkill = Struct.new(
-      :name,
-      :path,
-      :source,
-      keyword_init: true
-    )
+    # Raised when a declared skill cannot be resolved to a published version.
+    class Error < RubySkills::Error; end
 
-    # Resolve a skill from a local path or a remote repository.
-    #
-    # @param skill [RubySkills::LegacySkillfile::Skill] declared skill to resolve
-    # @return [ResolvedSkill] skill directory ready to install
-    # @raise [RubySkills::Error] if the skill has no usable source
-    def resolve(skill)
-      if skill.path
-        resolve_local(skill)
-      elsif skill.github
-        resolve_remote(skill)
-      else
-        raise RubySkills::Error,
-              "Unable to resolve #{skill.name}"
-      end
+    # @param skillfile [Skillfile]
+    # @param client [Registry::Client]
+    # @param lockfile [Lockfile, nil]
+    # @param update [Boolean] when true, pick the latest compatible version
+    def initialize(skillfile:, client:, lockfile: nil, update: false)
+      @skillfile = skillfile
+      @client = client
+      @lockfile = lockfile
+      @update = update
+    end
+
+    # @return [Resolution]
+    # @raise [Error]
+    def resolve
+      skills = @skillfile.dependencies.map { |dependency| resolve_dependency(dependency) }
+
+      Resolution.new(
+        source: @skillfile.source,
+        skills: skills,
+        dependencies: @skillfile.dependencies
+      )
     end
 
     private
 
-    # @api private
-    # @param skill [RubySkills::LegacySkillfile::Skill]
+    # @param dependency [Dependency]
     # @return [ResolvedSkill]
-    # @raise [RubySkills::Error] if the local skill path is not a directory
-    def resolve_local(skill)
-      path = Pathname.new(skill.path).expand_path
+    def resolve_dependency(dependency)
+      locked = locked_skill(dependency)
+      return fetch_release(dependency, locked.version) if keep_locked?(dependency, locked)
 
-      unless path.directory?
-        raise RubySkills::Error,
-              "Skill path does not exist: #{path}"
+      resolve_latest(dependency)
+    end
+
+    # @param dependency [Dependency]
+    # @return [LockedSkill, nil]
+    def locked_skill(dependency)
+      return if @update || @lockfile.nil?
+
+      @lockfile.find(dependency.name)
+    end
+
+    # @param dependency [Dependency]
+    # @param locked [LockedSkill, nil]
+    # @return [Boolean]
+    def keep_locked?(dependency, locked)
+      return false if locked.nil?
+      return false unless dependency.requirement.satisfied_by?(locked.version)
+
+      available_release?(fetch_version(dependency.name, locked.version))
+    end
+
+    # @param dependency [Dependency]
+    # @return [ResolvedSkill]
+    def resolve_latest(dependency)
+      skill = load_skill(dependency.name)
+      candidates = compatible_versions(skill.versions, dependency.requirement)
+
+      candidates.each do |version|
+        release = fetch_version(dependency.name, version)
+        return to_resolved(dependency, release) if available_release?(release)
+      end
+
+      raise unsatisfiable_error(dependency)
+    end
+
+    # @param dependency [Dependency]
+    # @param version [Gem::Version]
+    # @return [ResolvedSkill]
+    def fetch_release(dependency, version)
+      release = fetch_version(dependency.name, version)
+      raise unsatisfiable_error(dependency) unless available_release?(release)
+
+      to_resolved(dependency, release)
+    end
+
+    # @param name [String]
+    # @return [Registry::Skill]
+    def load_skill(name)
+      @client.get_skill(name)
+    rescue Registry::Error => e
+      raise Error, "Could not find skill #{name} in the registry" if not_found?(e)
+
+      raise Error, "Failed to resolve #{name}: #{e.message}"
+    end
+
+    # @param name [String]
+    # @param version [Gem::Version, String]
+    # @return [Registry::Version, nil]
+    def fetch_version(name, version)
+      @client.get_version(name, version.to_s)
+    rescue Registry::Error => e
+      return if not_found?(e)
+
+      raise Error, "Failed to resolve #{name} (#{version}): #{e.message}"
+    end
+
+    # @param versions [Array<String>]
+    # @param requirement [Gem::Requirement]
+    # @return [Array<Gem::Version>] highest first
+    def compatible_versions(versions, requirement)
+      versions
+        .select { |value| Gem::Version.correct?(value) }
+        .map { |value| Gem::Version.new(value) }
+        .select { |version| requirement.satisfied_by?(version) }
+        .sort
+        .reverse
+    end
+
+    # @param release [Registry::Version, nil]
+    # @return [Boolean]
+    def available_release?(release)
+      return false if release.nil?
+      return false if release.yanked
+      return false if unpublished?(release)
+
+      true
+    end
+
+    # @param release [Registry::Version]
+    # @return [Boolean]
+    def unpublished?(release)
+      release.published_at.nil? || release.published_at == false
+    end
+
+    # @param dependency [Dependency]
+    # @param release [Registry::Version]
+    # @return [ResolvedSkill]
+    def to_resolved(dependency, release)
+      if blank?(release.checksum)
+        raise Error, "Missing checksum for #{dependency.name} (#{release.version})"
       end
 
       ResolvedSkill.new(
-        name: skill.name,
-        path: path,
-        source: "path:#{path}"
+        name: dependency.name,
+        version: release.version,
+        checksum: release.checksum,
+        source: @skillfile.source,
+        download_url: release.download_url
       )
     end
 
-    # @api private
-    # @param skill [RubySkills::LegacySkillfile::Skill]
-    # @return [ResolvedSkill] skill cloned into a temporary directory
-    # @raise [RubySkills::Error] if the GitHub repository cannot be cloned
-    def resolve_remote(skill)
-      directory = Pathname.new(
-        Dir.mktmpdir("ruby-skills")
-      )
+    # @param error [Registry::Error]
+    # @return [Boolean]
+    def not_found?(error)
+      error.code == "not_found" || error.status == 404
+    end
 
-      repository = "https://github.com/#{skill.github}.git"
+    # @param value [String, nil]
+    # @return [Boolean]
+    def blank?(value)
+      value.to_s.strip.empty?
+    end
 
-      success = system(
-        "git",
-        "clone",
-        "--depth",
-        "1",
-        repository,
-        directory.to_s,
-        out: File::NULL,
-        err: File::NULL
-      )
-
-      unless success
-        raise RubySkills::Error,
-              "Unable to clone #{skill.github}"
-      end
-
-      ResolvedSkill.new(
-        name: skill.name,
-        path: directory,
-        source: "github:#{skill.github}"
+    # @param dependency [Dependency]
+    # @return [Error]
+    def unsatisfiable_error(dependency)
+      Error.new(
+        "Could not find a version of #{dependency.name} that satisfies " \
+        "#{dependency.requirement}"
       )
     end
   end

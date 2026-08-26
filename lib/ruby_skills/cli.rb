@@ -120,6 +120,18 @@ module RubySkills
       exit 1
     end
 
+    desc "validate [PATH]", "Validate a local Ruby Skill"
+    # Validate the current directory or +PATH+ as a skill.
+    #
+    # @param path [String] skill directory (defaults to +.+ )
+    # @return [void]
+    # @raise [SystemExit] with status 1 when the skill is invalid
+    def validate(path = ".")
+      result = Validator.new(path).validate
+      print_validation(result)
+      exit 1 unless result.valid?
+    end
+
     desc "version", "Display Ruby Skills version"
     # Print the installed gem version.
     #
@@ -184,6 +196,30 @@ module RubySkills
         say ""
         say "  cd #{result.name}" unless result.in_place
         say "  ruby-skills validate"
+      end
+
+      # @api private
+      # @param result [RubySkills::Validator::Result]
+      # @return [void]
+      def print_validation(result)
+        say "Validating #{result.label}"
+        say ""
+
+        if result.valid?
+          say "✓ manifest valid"
+          say "✓ version valid"
+          say "✓ entrypoint exists"
+          say "✓ file paths are safe"
+          say "✓ #{result.file_count} files included"
+          say ""
+          say "Skill is valid."
+        else
+          result.failures.each do |failure|
+            say "✗ #{failure}"
+          end
+          say ""
+          say "Skill is invalid."
+        end
       end
     end
   end

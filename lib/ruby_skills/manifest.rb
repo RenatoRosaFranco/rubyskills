@@ -26,6 +26,9 @@ module RubySkills
     # Allowed shape for +name+ and +namespace+.
     IDENTIFIER = /\A[a-z0-9_-]+\z/
 
+    # @return [Pathname] skill directory containing +skill.yml+
+    attr_reader :root
+
     # @return [String, nil]
     attr_reader :name
 

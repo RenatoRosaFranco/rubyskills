@@ -143,6 +143,77 @@ RSpec.describe RubySkills::CLI do
     end
   end
 
+  describe "validate" do
+    it "prints a success report and exits 0" do
+      with_tmp_project do |root|
+        expect {
+          described_class.start(%w[init rails/request-specs])
+        }.to output(/Created Ruby Skill/).to_stdout
+        skill = root.join("request-specs")
+        skill.join("references", "http.md").write("# http\n")
+        skill.join("references", "status.md").write("# status\n")
+
+        expect {
+          described_class.start(["validate", skill.to_s])
+        }.to output(
+          a_string_including(
+            "Validating rails/request-specs 0.1.0",
+            "✓ manifest valid",
+            "✓ version valid",
+            "✓ entrypoint exists",
+            "✓ file paths are safe",
+            "✓ 3 files included",
+            "Skill is valid."
+          )
+        ).to_stdout
+      end
+    end
+
+    it "validates the current directory when PATH is omitted" do
+      with_tmp_project do |root|
+        RubySkills::Generators::Skill.new(root: root).create(
+          "rails/request-specs",
+          in_place: true
+        )
+
+        expect {
+          described_class.start(["validate"])
+        }.to output(/Skill is valid/).to_stdout
+      end
+    end
+
+    it "prints every failure and exits 1" do
+      with_tmp_project do |root|
+        skill = root.join("request-specs")
+        FileUtils.mkdir_p(skill)
+        skill.join("skill.yml").write(
+          {
+            "name" => "request-specs",
+            "namespace" => "rails",
+            "version" => "foo",
+            "summary" => "Broken skill.",
+            "entrypoint" => "SKILL.md",
+            "files" => ["../secret"]
+          }.to_yaml
+        )
+
+        expect {
+          expect {
+            described_class.start(["validate", skill.to_s])
+          }.to output(
+            a_string_including(
+              "Validating rails/request-specs foo",
+              %(✗ version: "foo" is invalid),
+              "✗ entrypoint: SKILL.md does not exist",
+              "✗ files: ../secret escapes the skill directory",
+              "Skill is invalid."
+            )
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+  end
+
   describe "install" do
     it "exits with an error when the Skillfile is missing" do
       with_tmp_project do

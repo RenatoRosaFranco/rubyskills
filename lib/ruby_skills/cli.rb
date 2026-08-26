@@ -113,13 +113,26 @@ module RubySkills
     end
 
     desc "remove SKILL", "Remove an installed skill"
-    # Remove an installed skill from the project.
+    option :save, type: :boolean, default: false,
+                  desc: "Remove SKILL from Skillfile and Skills.lock"
+    # Remove an installed skill, or drop it from the project Skillfile.
     #
-    # @param skill [String] name of the skill to remove
+    # Without +--save+, only canonical +.ruby-skills+ storage is changed.
+    # With +--save+, the declaration is removed from Skillfile, remaining
+    # dependencies are re-resolved, and Skills.lock is rewritten.
+    #
+    # @param skill [String] +namespace/name+
     # @return [void]
     # @raise [SystemExit] when removal fails
     def remove(skill)
-      Remover.new.remove(skill)
+      if options[:save]
+        ProjectRemove.new(name: skill).run
+      else
+        Remover.new.remove(skill)
+      end
+    rescue ProjectRemove::NotDeclared => e
+      say e.message
+      exit 1
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 1

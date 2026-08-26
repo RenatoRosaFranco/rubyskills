@@ -20,6 +20,9 @@ module RubySkills
     # Directory where installed skills are stored.
     SKILLS_DIRECTORY = ".ruby-skills"
 
+    # @return [Pathname] project root used to resolve skill paths
+    attr_reader :root
+
     # @param root [String, Pathname] project root used to resolve skill paths
     def initialize(root: Dir.pwd)
       @root = Pathname.new(root)

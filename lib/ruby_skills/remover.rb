@@ -1,50 +1,91 @@
 # frozen_string_literal: true
 
 module RubySkills
-  # Uninstalls a skill from the project, adapters, and lockfile.
+  # Uninstalls a skill from canonical +.ruby-skills+ storage.
   #
-  # @example Remove an installed skill
-  #   RubySkills::Remover.new.remove("rails-performance")
+  # Direct removal does not modify Skillfile or Skills.lock. When the current
+  # project's lock still references the skill, a warning is printed.
   #
-  # @see RubySkills::LegacyLockfile
+  # @example
+  #   RubySkills::Remover.new.remove("rails/request-specs")
+  #
+  # @see RubySkills::Install
   # @see RubySkills::Adapters
   # @since 0.1.0
   class Remover
     # @param config [RubySkills::Config] project paths used to locate skills
-    def initialize(config: Config.new)
-      @config = config
+    # @param output [#puts]
+    def initialize(config: nil, output: $stdout)
+      @config = config || Config.new
+      @output = output
     end
 
-    # Remove an installed skill from disk, tool adapters, and the lockfile.
+    # Remove installed versions of +name+ from +.ruby-skills+.
     #
-    # @param name [String] skill identifier to remove
+    # @param name [String] +namespace/name+
     # @return [void]
-    # @raise [RubySkills::Error] if the skill is not installed
+    # @raise [RubySkills::Error] if a path is unsafe
     def remove(name)
-      path = @config.skills_path.join(name)
-
-      unless path.exist?
-        raise RubySkills::Error,
-              "Skill `#{name}` is not installed"
+      identifier = name.to_s.strip
+      versions = Install.installed_versions(identifier, config: @config)
+      if versions.empty?
+        @output.puts "#{identifier} is not installed."
+        return
       end
 
-      adapters.each do |adapter|
-        adapter.new.remove(name)
+      versions.each do |version|
+        @output.puts "Removing #{identifier} #{version}..."
       end
-
-      FileUtils.rm_rf(path)
-
-      LegacyLockfile.new.remove(name)
-
-      puts "✓ Removed #{name}"
+      @output.puts
+      versions.each do |version|
+        Install.remove_version!(identifier, version, config: @config)
+      end
+      @output.puts "✓ removed"
+      warn_if_locked(identifier)
+      sync_adapters(identifier)
     end
 
     private
 
-    # @api private
-    # @return [Array<Class>] adapter classes notified when a skill is removed
-    def adapters
-      RubySkills::Adapters.all
+    # @param name [String]
+    # @return [void]
+    def warn_if_locked(name)
+      return unless lockfile_references?(name)
+
+      @output.puts
+      @output.puts "Warning:"
+      @output.puts "#{name} is still referenced by this project's Skills.lock."
+      @output.puts
+      @output.puts "Run with --save to remove it from the project configuration."
+    end
+
+    # @param name [String]
+    # @return [Boolean]
+    def lockfile_references?(name)
+      lockfile = nearest_lockfile
+      return false if lockfile.nil?
+
+      lockfile.locked?(name)
+    end
+
+    # @return [Lockfile, nil]
+    def nearest_lockfile
+      skillfile = Skillfile.find(@config.root)
+      path = skillfile.path.dirname.join(Lockfile::FILENAME)
+      return unless path.file?
+
+      Lockfile.load(path)
+    rescue RubySkills::Error
+      nil
+    end
+
+    # @param name [String]
+    # @return [void]
+    def sync_adapters(name)
+      Adapters.sync_remove(name, root: @config.root)
+    rescue StandardError => e
+      @output.puts
+      @output.puts "Warning: adapter sync failed: #{e.message}"
     end
   end
 end

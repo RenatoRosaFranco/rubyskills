@@ -1034,4 +1034,145 @@ RSpec.describe RubySkills::CLI do
       end
     end
   end
+
+  describe "remove" do
+    def config_for(root)
+      RubySkills::Config.new(root: root)
+    end
+
+    def plant_installed(root, name, version)
+      path = RubySkills::Install.destination(name, version, config: config_for(root))
+      FileUtils.mkdir_p(path)
+      path.join("SKILL.md").write("# #{name}\n")
+      path
+    end
+
+    def write_lock(root, entries)
+      RubySkills::Lockfile.new(
+        source: "https://rubyskills.org",
+        skills: entries.map { |name, version, _requirement|
+          RubySkills::LockedSkill.new(
+            name: name,
+            version: version,
+            checksum: "sha256:#{Digest::SHA256.hexdigest("#{name}@#{version}")}"
+          )
+        },
+        dependencies: entries.map { |name, _version, requirement|
+          RubySkills::Dependency.new(
+            name: name,
+            requirement: Gem::Requirement.new(requirement)
+          )
+        }
+      ).write(root.join("Skills.lock"))
+    end
+
+    def stub_catalog(*releases)
+      client = RubySkillsSpec::CatalogClient.new
+      releases.each do |name, version|
+        client.add(name, version)
+      end
+      allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+    end
+
+    it "removes an installed skill without changing Skillfile or Skills.lock" do
+      with_tmp_project do |root|
+        skillfile = root.join("Skillfile")
+        skillfile.write(<<~RUBY)
+          source "https://rubyskills.org"
+
+          skill "demo/a", "~> 1.0"
+        RUBY
+        write_lock(root, [["demo/a", "1.0.0", "~> 1.0"]])
+        planted = plant_installed(root, "demo/a", "1.0.0")
+        original_skillfile = skillfile.read
+        original_lock = root.join("Skills.lock").read
+
+        expect {
+          described_class.start(["remove", "demo/a"])
+        }.to output(/✓ removed/).to_stdout
+
+        expect(planted).not_to exist
+        expect(skillfile.read).to eq(original_skillfile)
+        expect(root.join("Skills.lock").read).to eq(original_lock)
+      end
+    end
+
+    it "prints a message and exits successfully when the skill is not installed" do
+      with_tmp_project do
+        expect {
+          described_class.start(["remove", "demo/a"])
+        }.to output("demo/a is not installed.\n").to_stdout
+      end
+    end
+
+    it "warns when Skills.lock still references the removed skill" do
+      with_tmp_project do |root|
+        root.join("Skillfile").write(<<~RUBY)
+          source "https://rubyskills.org"
+
+          skill "demo/a", "~> 1.0"
+        RUBY
+        write_lock(root, [["demo/a", "1.0.0", "~> 1.0"]])
+        plant_installed(root, "demo/a", "1.0.0")
+
+        expect {
+          described_class.start(["remove", "demo/a"])
+        }.to output(/still referenced by this project's Skills.lock/).to_stdout
+      end
+    end
+
+    it "removes A from Skillfile, lock, and storage while leaving B" do
+      with_tmp_project do |root|
+        root.join("Skillfile").write(<<~RUBY)
+          source "https://rubyskills.org"
+
+          skill "demo/a", "~> 1.0"
+          skill "demo/b", "~> 2.0"
+        RUBY
+        write_lock(root, [["demo/a", "1.0.0", "~> 1.0"], ["demo/b", "2.0.0", "~> 2.0"]])
+        plant_installed(root, "demo/a", "1.0.0")
+        plant_installed(root, "demo/b", "2.0.0")
+        stub_catalog(["demo/b", "2.0.0"])
+
+        expect {
+          described_class.start(["remove", "demo/a", "--save"])
+        }.to output(%r{Removed demo/a}).to_stdout
+
+        expect(root.join("Skillfile").read).to eq(<<~RUBY)
+          source "https://rubyskills.org"
+
+          skill "demo/b", "~> 2.0"
+        RUBY
+        lockfile = RubySkills::Lockfile.load(root.join("Skills.lock"))
+        expect(lockfile.locked?("demo/a")).to be false
+        expect(lockfile.find("demo/b").version).to eq(Gem::Version.new("2.0.0"))
+        expect(RubySkills::Install.installed?("demo/a", "1.0.0", config: config_for(root)))
+          .to be false
+        expect(RubySkills::Install.installed?("demo/b", "2.0.0", config: config_for(root)))
+          .to be true
+      end
+    end
+
+    it "exits 1 when --save names a skill that is not declared" do
+      with_tmp_project do |root|
+        root.join("Skillfile").write('skill "demo/b"')
+
+        expect {
+          expect {
+            described_class.start(["remove", "demo/a", "--save"])
+          }.to output("demo/a is not declared in Skillfile.\n").to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "exits 1 when --save cannot find a Skillfile" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(["remove", "demo/a", "--save"])
+          }.to output(/Error:.*Skillfile not found/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+  end
 end

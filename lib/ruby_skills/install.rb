@@ -15,7 +15,7 @@ module RubySkills
   #   result.path # => .ruby-skills/rails/request-specs/1.4.2
   #
   # @since 0.1.0
-  class Install
+  class Install # rubocop:disable Metrics/ClassLength
     Result = Struct.new(:name, :version, :checksum, :path, :error, keyword_init: true) do
       # @return [Boolean]
       def success?
@@ -41,6 +41,62 @@ module RubySkills
       # @return [Boolean]
       def installed?(name, version, config:)
         destination(name, version, config: config).directory?
+      end
+
+      # Installed version directory names for +name+ under +.ruby-skills+.
+      #
+      # @param name [String]
+      # @param config [Config]
+      # @return [Array<String>]
+      def installed_versions(name, config:)
+        namespace, skill = split_name(name)
+        dir = config.skills_path.join(namespace, skill)
+        return [] unless dir.directory?
+        return [] if dir.symlink?
+
+        dir.children.filter_map { |child|
+          next unless child.directory?
+          next if child.symlink?
+          next if child.basename.to_s.start_with?(".")
+
+          child.basename.to_s
+        }.sort
+      end
+
+      # Raise if +name+/+version+ would escape canonical storage.
+      #
+      # Missing destinations are allowed (nothing to remove).
+      #
+      # @param name [String]
+      # @param version [Gem::Version, String]
+      # @param config [Config]
+      # @return [void]
+      # @raise [RubySkills::Error]
+      def assert_removable!(name, version, config:)
+        dest = destination(name, version, config: config)
+        assert_safe_component!(version)
+        assert_under_skills!(dest, config)
+        return unless dest.exist? || dest.symlink?
+
+        assert_safe_entry!(dest, config)
+      end
+
+      # Delete one installed version and prune empty parent directories.
+      #
+      # Never removes +.ruby-skills+ itself. Never follows a symlink that
+      # points outside canonical storage.
+      #
+      # @param name [String]
+      # @param version [Gem::Version, String]
+      # @param config [Config]
+      # @return [void]
+      def remove_version!(name, version, config:)
+        dest = destination(name, version, config: config)
+        assert_removable!(name, version, config: config)
+        return unless dest.exist? || dest.symlink?
+
+        remove_tree_safely(dest, config)
+        prune_empty_parents(dest, stop_at: config.skills_path)
       end
 
       # Compare two SHA-256 values, with or without a +sha256:+ prefix.
@@ -102,6 +158,82 @@ module RubySkills
       # @return [String]
       def hex_digest(value)
         value.to_s.strip.delete_prefix("sha256:")
+      end
+
+      # @param value [Gem::Version, String]
+      # @return [void]
+      def assert_safe_component!(value)
+        text = value.to_s
+        if text.empty? || text.start_with?(".") || text.include?("/") ||
+           text.include?("\\") || text.include?("..")
+          raise RubySkills::Error, "Refusing to remove unsafe path #{text.inspect}"
+        end
+      end
+
+      # @param path [Pathname]
+      # @param config [Config]
+      # @return [void]
+      def assert_under_skills!(path, config)
+        root = config.skills_path.expand_path
+        expanded = path.expand_path
+        return if under?(expanded, root)
+
+        raise RubySkills::Error, "Refusing to remove #{path} (outside .ruby-skills)"
+      end
+
+      # @param path [Pathname]
+      # @param config [Config]
+      # @return [void]
+      def assert_safe_entry!(path, config)
+        assert_under_skills!(path, config)
+        return unless path.symlink?
+
+        target = Pathname.new(path.readlink)
+        target = path.dirname.join(target) unless target.absolute?
+        return if under?(target.expand_path, config.skills_path.expand_path)
+
+        raise RubySkills::Error,
+              "Refusing to follow symlink #{path} outside .ruby-skills"
+      end
+
+      # @param path [Pathname]
+      # @param root [Pathname]
+      # @return [Boolean]
+      def under?(path, root)
+        path == root || path.to_s.start_with?("#{root}/")
+      end
+
+      # @param path [Pathname]
+      # @param config [Config]
+      # @return [void]
+      def remove_tree_safely(path, config)
+        assert_safe_entry!(path, config)
+        if path.symlink? || path.file?
+          path.unlink
+          return
+        end
+        return unless path.directory?
+
+        path.children.each do |child|
+          remove_tree_safely(child, config)
+        end
+        path.rmdir
+      end
+
+      # @param removed_path [Pathname]
+      # @param stop_at [Pathname]
+      # @return [void]
+      def prune_empty_parents(removed_path, stop_at:)
+        dir = removed_path.dirname
+        stop = stop_at.expand_path
+        while under?(dir.expand_path, stop) && dir.expand_path != stop
+          break unless dir.directory?
+          break if dir.symlink?
+          break unless dir.children.empty?
+
+          dir.rmdir
+          dir = dir.dirname
+        end
       end
     end
 

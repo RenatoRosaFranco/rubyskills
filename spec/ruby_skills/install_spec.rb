@@ -184,4 +184,80 @@ RSpec.describe RubySkills::Install do
     expect(result).not_to be_success
     expect(result.error.message).to eq("Skill not found")
   end
+
+  describe ".installed_versions" do
+    it "lists version directories and ignores hidden staging dirs" do
+      with_tmp_project do |root|
+        config = RubySkills::Config.new(root: root)
+        FileUtils.mkdir_p(described_class.destination("rails/a", "1.0.0", config: config))
+        FileUtils.mkdir_p(described_class.destination("rails/a", "1.1.0", config: config))
+        FileUtils.mkdir_p(config.skills_path.join("rails", "a", ".tmp-1.2.0-1"))
+
+        expect(described_class.installed_versions("rails/a", config: config)).to eq(
+          %w[1.0.0 1.1.0]
+        )
+      end
+    end
+  end
+
+  describe ".remove_version!" do
+    it "removes the version and prunes empty parent directories" do
+      with_tmp_project do |root|
+        config = RubySkills::Config.new(root: root)
+        dest = described_class.destination("rails/a", "1.0.0", config: config)
+        FileUtils.mkdir_p(dest)
+        dest.join("SKILL.md").write("# a\n")
+
+        described_class.remove_version!("rails/a", "1.0.0", config: config)
+
+        expect(dest).not_to exist
+        expect(config.skills_path.join("rails")).not_to exist
+        expect(config.skills_path).to be_directory
+      end
+    end
+
+    it "keeps sibling skills and the skills root" do
+      with_tmp_project do |root|
+        config = RubySkills::Config.new(root: root)
+        gone = described_class.destination("rails/a", "1.0.0", config: config)
+        kept = described_class.destination("rails/b", "2.0.0", config: config)
+        FileUtils.mkdir_p(gone)
+        FileUtils.mkdir_p(kept)
+
+        described_class.remove_version!("rails/a", "1.0.0", config: config)
+
+        expect(gone).not_to exist
+        expect(kept).to be_directory
+        expect(config.skills_path).to be_directory
+      end
+    end
+
+    it "refuses a version that would escape .ruby-skills" do
+      with_tmp_project do |root|
+        config = RubySkills::Config.new(root: root)
+
+        expect {
+          described_class.remove_version!("rails/a", "..", config: config)
+        }.to raise_error(RubySkills::Error, /unsafe path/)
+      end
+    end
+
+    it "refuses to follow a symlink that points outside the project" do
+      with_tmp_project do |root|
+        config = RubySkills::Config.new(root: root)
+        outside = root.join("outside")
+        FileUtils.mkdir_p(outside)
+        outside.join("secret").write("keep\n")
+        dest = described_class.destination("rails/a", "1.0.0", config: config)
+        FileUtils.mkdir_p(dest.dirname)
+        dest.make_symlink(outside)
+
+        expect {
+          described_class.remove_version!("rails/a", "1.0.0", config: config)
+        }.to raise_error(RubySkills::Error, /symlink/)
+        expect(outside.join("secret").read).to eq("keep\n")
+        expect(dest).to be_symlink
+      end
+    end
+  end
 end

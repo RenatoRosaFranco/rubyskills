@@ -241,4 +241,91 @@ RSpec.describe RubySkills::Skillfile do
       end
     end
   end
+
+  describe "#remove" do
+    it "drops the declaration in memory without writing" do
+      with_tmp_project do |root|
+        path = write_skillfile(
+          root,
+          <<~RUBY
+            source "https://rubyskills.org"
+
+            skill "rails/conventions", "~> 1.0"
+            skill "rails/request-specs", "~> 2.1"
+          RUBY
+        )
+        original = path.read
+        skillfile = described_class.load(path)
+        skillfile.remove("rails/request-specs")
+
+        expect(skillfile).not_to include("rails/request-specs")
+        expect(skillfile).to include("rails/conventions")
+        expect(path.read).to eq(original)
+      end
+    end
+
+    it "raises when the skill is not declared" do
+      with_tmp_project do |root|
+        skillfile = load_skillfile(root, 'skill "rails/conventions"')
+
+        expect {
+          skillfile.remove("rails/request-specs")
+        }.to raise_error(
+          RubySkills::Skillfile::Error,
+          a_string_including("rails/request-specs is not declared in Skillfile")
+        )
+      end
+    end
+  end
+
+  describe "#write" do
+    it "rewrites remaining skills in original order with a trailing newline" do
+      with_tmp_project do |root|
+        path = write_skillfile(
+          root,
+          <<~RUBY
+            source "https://rubyskills.org"
+
+            skill "rails/conventions", "~> 1.0"
+            skill "rails/request-specs", "~> 2.1"
+            skill "ruby/gem-development"
+          RUBY
+        )
+        skillfile = described_class.load(path)
+        skillfile.remove("rails/request-specs")
+        skillfile.write
+
+        expect(path.read).to eq(<<~RUBY)
+          source "https://rubyskills.org"
+
+          skill "rails/conventions", "~> 1.0"
+          skill "ruby/gem-development"
+        RUBY
+        expect(path.read).to end_with("\n")
+      end
+    end
+
+    it "is byte-identical for the same remaining dependencies" do
+      with_tmp_project do |root|
+        path = write_skillfile(
+          root,
+          <<~RUBY
+            source "https://rubyskills.org"
+
+            skill "rails/conventions", "~> 1.0"
+            skill "rails/request-specs", "~> 2.1"
+          RUBY
+        )
+        first = described_class.load(path)
+        first.remove("rails/request-specs")
+        first.write
+        snapshot = path.read
+
+        second = described_class.load(path)
+        second.write
+
+        expect(path.read).to eq(snapshot)
+      end
+    end
+  end
 end

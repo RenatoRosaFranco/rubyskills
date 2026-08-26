@@ -76,12 +76,7 @@ module RubySkills
     # @api private
     # @return [Array<Class>] adapter classes notified when a skill is installed
     def adapters
-      [
-        Adapters::Claude,
-        Adapters::Codex,
-        Adapters::Cursor,
-        Adapters::Vscode
-      ]
+      Adapters.all
     end
   end
 end

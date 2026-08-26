@@ -27,6 +27,9 @@ module RubySkills
     # @return [String] registry origin
     attr_reader :source
 
+    # @return [Array<Dependency>] future runtime dependencies of this skill
+    attr_reader :dependencies
+
     # @param name [String]
     # @param version [Gem::Version, String]
     # @param checksum [String]
@@ -38,6 +41,7 @@ module RubySkills
       @checksum = self.class.normalize_checksum(checksum)
       @download_url = download_url
       @source = source
+      @dependencies = []
     end
 
     # @param value [String]

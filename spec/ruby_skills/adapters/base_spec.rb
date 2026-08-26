@@ -42,3 +42,36 @@ RSpec.describe RubySkills::Adapters::Codex do
     )
   end
 end
+
+RSpec.describe RubySkills::Adapters do
+  describe ".all" do
+    it "lists the built-in agent adapters" do
+      expect(described_class.all).to eq(
+        [
+          RubySkills::Adapters::Claude,
+          RubySkills::Adapters::Codex,
+          RubySkills::Adapters::Cursor,
+          RubySkills::Adapters::Vscode
+        ]
+      )
+    end
+  end
+
+  describe ".sync_remove" do
+    it "removes the skill from every adapter destination" do
+      with_tmp_project do |root|
+        destinations = described_class.all.map { |klass|
+          info = klass::ADAPTER_INFO
+          path = root.join(info.fetch(:adapter), info.fetch(:directory), "rails-performance")
+          FileUtils.mkdir_p(path)
+          path.join("SKILL.md").write("# skill\n")
+          path
+        }
+
+        described_class.sync_remove("rails-performance", root: root)
+
+        expect(destinations.map(&:exist?)).to all(be false)
+      end
+    end
+  end
+end

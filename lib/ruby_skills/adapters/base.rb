@@ -1,7 +1,31 @@
 # frozen_string_literal: true
 
 module RubySkills
+  # Agent-specific mirrors of canonical +.ruby-skills+ storage.
+  #
+  # {Adapters.all} lists Claude, Codex, Cursor, and VS Code. Commands update
+  # canonical storage first, then call {Adapters.sync_remove}.
   module Adapters
+    class << self
+      # Adapter classes that mirror canonical storage into agent directories.
+      #
+      # @return [Array<Class>]
+      def all
+        [Claude, Codex, Cursor, Vscode]
+      end
+
+      # Remove +name+ from every adapter destination under +root+.
+      #
+      # @param name [String]
+      # @param root [String, Pathname]
+      # @return [void]
+      def sync_remove(name, root:)
+        all.each do |klass|
+          klass.new(root: root).remove(name)
+        end
+      end
+    end
+
     # Base implementation for skill adapters.
     #
     # Subclasses must define an ADAPTER_INFO constant containing:

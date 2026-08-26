@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "pathname"
 require "rubygems"
 
@@ -124,6 +125,13 @@ module RubySkills
       !find(name).nil?
     end
 
+    # Whether the Skillfile declared an explicit +source+.
+    #
+    # @return [Boolean]
+    def source_declared?
+      @source_declared
+    end
+
     # Add a declared skill in memory. Does not write the file.
     #
     # @param name [String]
@@ -132,6 +140,47 @@ module RubySkills
     def add(name, requirement = nil)
       declare_skill(name, requirement, location: nil)
       find(name)
+    end
+
+    # Remove a declared skill in memory. Does not write the file.
+    #
+    # @param name [String]
+    # @return [self]
+    # @raise [Error] if +name+ is not declared
+    def remove(name)
+      identifier = name.to_s.strip
+      unless include?(identifier)
+        raise Error.new("#{identifier} is not declared in Skillfile", filename: @path)
+      end
+
+      @dependencies.delete_if do |dependency|
+        dependency.name == identifier
+      end
+      self
+    end
+
+    # Rewrite the Skillfile atomically. Remaining dependencies keep their
+    # original order and requirement strings.
+    #
+    # @param path [String, Pathname, nil]
+    # @return [void]
+    def write(path = @path)
+      @path = AtomicFile.write(path, serialize)
+    end
+
+    # Deterministic Skillfile text. Always ends with a newline.
+    #
+    # @return [String]
+    def serialize
+      lines = []
+      if @source_declared
+        lines << %(source "#{@source}")
+        lines << ""
+      end
+      @dependencies.each do |dependency|
+        lines << skill_line(dependency)
+      end
+      "#{lines.join("\n")}\n"
     end
 
     # Append +name+ to the Skillfile on disk. Call after {#add}.

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "fileutils"
 require "pathname"
 require "rubygems"
 require "uri"
@@ -119,14 +118,8 @@ module RubySkills
     # @return [void]
     def write(path)
       destination = Pathname.new(path)
-      FileUtils.mkdir_p(destination.dirname)
-      tmp = destination.dirname.join(".Skills.lock.#{Process.pid}.tmp")
-      tmp.write(serialize)
-      tmp.rename(destination)
+      AtomicFile.write(destination, serialize)
       @path = destination
-    rescue StandardError
-      tmp.unlink if defined?(tmp) && tmp.exist?
-      raise
     end
 
     # @return [String]

@@ -9,14 +9,17 @@ module RubySkillsSpec
       Dir.mktmpdir("ruby-skills-xdg-") do |dir|
         previous_xdg = ENV.fetch("XDG_CONFIG_HOME", nil)
         previous_url = ENV.fetch("RUBY_SKILLS_REGISTRY_URL", nil)
+        previous_token = ENV.fetch("RUBY_SKILLS_API_TOKEN", nil)
         ENV["XDG_CONFIG_HOME"] = dir
         ENV.delete("RUBY_SKILLS_REGISTRY_URL")
+        ENV.delete("RUBY_SKILLS_API_TOKEN")
 
         begin
           yield Pathname.new(dir).join("ruby-skills")
         ensure
           restore_env("XDG_CONFIG_HOME", previous_xdg)
           restore_env("RUBY_SKILLS_REGISTRY_URL", previous_url)
+          restore_env("RUBY_SKILLS_API_TOKEN", previous_token)
         end
       end
     end

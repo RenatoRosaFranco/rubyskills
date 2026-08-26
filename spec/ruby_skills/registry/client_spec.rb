@@ -325,6 +325,33 @@ RSpec.describe RubySkills::Registry::Client do
     end
   end
 
+  describe "default token" do
+    it "reads the token from credentials.yml" do
+      with_user_config_home do
+        RubySkills::Credentials.load.update_token!("rsk_file")
+        client = described_class.new(
+          base_url: "https://rubyskills.org",
+          http: RubySkillsSpec::FakeRegistryHttp.new
+        )
+
+        expect(client.token).to eq("rsk_file")
+      end
+    end
+
+    it "prefers RUBY_SKILLS_API_TOKEN over credentials.yml" do
+      with_user_config_home do
+        RubySkills::Credentials.load.update_token!("rsk_file")
+        ENV["RUBY_SKILLS_API_TOKEN"] = "rsk_env"
+        client = described_class.new(
+          base_url: "https://rubyskills.org",
+          http: RubySkillsSpec::FakeRegistryHttp.new
+        )
+
+        expect(client.token).to eq("rsk_env")
+      end
+    end
+  end
+
   it "rejects locators that are not namespace/name" do
     client = client_for(RubySkillsSpec::FakeRegistryHttp.new)
 

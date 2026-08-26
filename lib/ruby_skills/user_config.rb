@@ -81,7 +81,8 @@ module RubySkills
 
     # @return [void]
     def save
-      FileUtils.mkdir_p(@directory, mode: 0o700)
+      FileUtils.mkdir_p(@directory)
+      @directory.chmod(0o700) if @directory.directory?
       path.write(YAML.dump(stringify_keys(@data)))
       path.chmod(0o600)
     end

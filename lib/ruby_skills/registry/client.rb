@@ -179,8 +179,10 @@ module RubySkills
 
       # @return [String, nil]
       def default_token
-        value = ENV.fetch(TOKEN_ENV, nil).to_s.strip
-        value.empty? ? nil : value
+        env = ENV.fetch(TOKEN_ENV, nil).to_s.strip
+        return env unless env.empty?
+
+        Credentials.load.token
       end
 
       # @return [void]

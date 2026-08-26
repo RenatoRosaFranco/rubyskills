@@ -56,6 +56,55 @@ RSpec.describe RubySkills::CLI do
     end
   end
 
+  describe "login" do
+    let(:token) { "rsk_#{"a" * 64}" }
+
+    it "saves --token to credentials.yml without printing it" do
+      with_user_config_home do |directory|
+        expect {
+          described_class.start(["login", "--token", token])
+        }.to output("Logged in.\n").to_stdout
+
+        file = directory.join("credentials.yml")
+        expect(file).to be_file
+        expect(file.stat.mode & 0o777).to eq(0o600)
+        expect(YAML.safe_load(file.read)).to eq("token" => token)
+        expect(directory.join("config.yml")).not_to exist
+      end
+    end
+
+    it "explains how to pass a token when --token is omitted" do
+      with_user_config_home do
+        expect {
+          expect {
+            described_class.start(["login"])
+          }.to output(
+            a_string_including(
+              "Browser sign-in is not available yet.",
+              "ruby-skills login --token rsk_..."
+            )
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+
+        expect(RubySkills::Credentials.load.token).to be_nil
+      end
+    end
+  end
+
+  describe "logout" do
+    it "removes the saved token" do
+      with_user_config_home do |directory|
+        RubySkills::Credentials.load.update_token!("rsk_secret")
+
+        expect {
+          described_class.start(["logout"])
+        }.to output("Logged out.\n").to_stdout
+
+        expect(directory.join("credentials.yml")).not_to exist
+      end
+    end
+  end
+
   describe "list" do
     it "prints a message when no skills are installed" do
       with_tmp_project do

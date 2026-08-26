@@ -176,6 +176,38 @@ module RubySkills
       exit 1
     end
 
+    desc "login", "Save a registry API token"
+    option :token, type: :string,
+                   desc: "API token issued by the registry (rsk_...)"
+    # Store a registry token in +~/.config/ruby-skills/credentials.yml+.
+    #
+    # Device authorization (browser code) is not implemented yet; pass
+    # +--token+ for this cycle.
+    #
+    # @return [void]
+    # @raise [SystemExit] when +--token+ is missing or invalid
+    def login
+      if options[:token].to_s.strip.empty?
+        print_login_help
+        exit 1
+      end
+
+      Credentials.load.update_token!(options[:token])
+      say "Logged in."
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
+    end
+
+    desc "logout", "Remove the saved registry API token"
+    # Delete the token from +credentials.yml+.
+    #
+    # @return [void]
+    def logout
+      Credentials.load.clear!
+      say "Logged out."
+    end
+
     desc "version", "Display Ruby Skills version"
     # Print the installed gem version.
     #
@@ -297,6 +329,16 @@ module RubySkills
         settings.update_registry!(value) if value
 
         say "registry: #{settings.registry}"
+      end
+
+      # @api private
+      # @return [void]
+      def print_login_help
+        say "Browser sign-in is not available yet."
+        say ""
+        say "Create a token on the registry and run:"
+        say ""
+        say "  ruby-skills login --token rsk_..."
       end
 
       # @api private

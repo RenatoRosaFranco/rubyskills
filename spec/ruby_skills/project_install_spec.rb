@@ -138,9 +138,10 @@ RSpec.describe RubySkills::ProjectInstall do
     root.join("Skillfile").write(contents)
   end
 
-  def install(root, http, save: nil, output: StringIO.new)
+  def install(root, http, save: nil, version: nil, output: StringIO.new)
     described_class.new(
       save: save,
+      version: version,
       client: client_for(http),
       starting_directory: root,
       output: output
@@ -299,14 +300,26 @@ RSpec.describe RubySkills::ProjectInstall do
         source "https://rubyskills.org"
       RUBY
 
-      install(root, http, save: "rails/request-specs")
+      output = install(root, http, save: "rails/request-specs")
 
       skillfile = RubySkills::Skillfile.load(root.join("Skillfile"))
-      expect(skillfile).to include("rails/request-specs")
-      expect(root.join("Skillfile").read).to include('skill "rails/request-specs"')
+      expect(skillfile.find("rails/request-specs").requirement).to eq(
+        Gem::Requirement.new("~> 2.1")
+      )
+      expect(root.join("Skillfile").read).to include('skill "rails/request-specs", "~> 2.1"')
       expect(root.join(".ruby-skills", "rails", "request-specs", "2.1.4")).to be_directory
       expect(RubySkills::Lockfile.load(root.join("Skills.lock")).locked?("rails/request-specs"))
         .to be true
+      expect(output).to include(
+        "Adding rails/request-specs to Skillfile...",
+        "Resolving dependencies...",
+        "Fetching rails/request-specs 2.1.4",
+        "✓ checksums verified",
+        "✓ installed",
+        "✓ Skillfile updated",
+        "✓ Skills.lock updated",
+        "Added rails/request-specs (~> 2.1)"
+      )
     end
   end
 
@@ -383,6 +396,177 @@ RSpec.describe RubySkills::ProjectInstall do
       expect { install(root, http) }.to raise_error(RubySkills::Resolver::VersionConflict)
       expect(root.join("Skills.lock")).not_to exist
       expect(root.join(".ruby-skills")).not_to exist
+    end
+  end
+
+  it "writes an exact requirement when save uses @version" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "rails/request-specs", versions: %w[2.1.4 2.2.0])
+      write_skillfile(root, %(source "https://rubyskills.org"\n))
+
+      output = install(root, http, save: "rails/request-specs@2.1.4")
+
+      expect(root.join("Skillfile").read).to include(
+        'skill "rails/request-specs", "= 2.1.4"'
+      )
+      expect(output).to include("Added rails/request-specs (= 2.1.4)")
+      lockfile = RubySkills::Lockfile.load(root.join("Skills.lock"))
+      expect(lockfile.find("rails/request-specs").version).to eq(Gem::Version.new("2.1.4"))
+    end
+  end
+
+  it "writes the explicit --version requirement" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "rails/request-specs", versions: %w[2.0.0 2.1.4])
+      write_skillfile(root, %(source "https://rubyskills.org"\n))
+
+      output = install(root, http, save: "rails/request-specs", version: "~> 2.0")
+
+      expect(root.join("Skillfile").read).to include(
+        'skill "rails/request-specs", "~> 2.0"'
+      )
+      expect(output).to include("Added rails/request-specs (~> 2.0)")
+    end
+  end
+
+  it "follows patch-level pessimistic constraints already in the Skillfile" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "rails/conventions", versions: %w[1.3.2])
+      publish(http, root, name: "rails/request-specs", versions: %w[2.1.4])
+      write_skillfile(root, <<~RUBY)
+        source "https://rubyskills.org"
+        skill "rails/conventions", "~> 1.3.2"
+      RUBY
+
+      install(root, http, save: "rails/request-specs")
+
+      expect(root.join("Skillfile").read).to include(
+        'skill "rails/request-specs", "~> 2.1.4"'
+      )
+    end
+  end
+
+  it "does not duplicate an already declared skill" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "rails/request-specs", versions: %w[2.1.4])
+      write_skillfile(root, <<~RUBY)
+        source "https://rubyskills.org"
+        skill "rails/request-specs", "~> 2.1"
+      RUBY
+      original = root.join("Skillfile").read
+
+      output = install(root, http, save: "rails/request-specs")
+
+      expect(output).to include(
+        "rails/request-specs is already declared in Skillfile (~> 2.1)"
+      )
+      expect(root.join("Skillfile").read).to eq(original)
+      expect(root.join("Skillfile").read.scan('skill "rails/request-specs"').size).to eq(1)
+    end
+  end
+
+  it "updates the requirement when the user supplies a different one" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "rails/request-specs", versions: %w[2.0.0 2.1.4])
+      write_skillfile(root, <<~RUBY)
+        source "https://rubyskills.org"
+        skill "rails/request-specs", "~> 2.1"
+      RUBY
+
+      install(root, http, save: "rails/request-specs", version: "~> 2.0")
+
+      expect(root.join("Skillfile").read).to include(
+        'skill "rails/request-specs", "~> 2.0"'
+      )
+      expect(root.join("Skillfile").read.scan('skill "rails/request-specs"').size).to eq(1)
+    end
+  end
+
+  it "creates a Skillfile after a successful --save install" do
+    with_user_config_home do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        publish(http, root, name: "rails/request-specs", versions: %w[2.1.4])
+
+        install(root, http, save: "rails/request-specs")
+
+        expect(root.join("Skillfile").read).to eq(<<~RUBY)
+          source "https://rubyskills.org"
+
+          skill "rails/request-specs", "~> 2.1"
+        RUBY
+      end
+    end
+  end
+
+  it "does not write Skillfile when --save checksum verification fails" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      stub_checksum_mismatch(http, root, name: "rails/request-specs", version: "2.1.4")
+      path = root.join("Skillfile")
+      path.write(<<~RUBY)
+        source "https://rubyskills.org"
+      RUBY
+      original = path.read
+
+      expect {
+        install(root, http, save: "rails/request-specs")
+      }.to raise_error(RubySkills::Error, "Checksum mismatch")
+      expect(path.read).to eq(original)
+      expect(root.join("Skills.lock")).not_to exist
+    end
+  end
+
+  it "does not create a Skillfile when --save resolution fails" do
+    with_user_config_home do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        http.stub(:get, "/api/v1/skills/rails/missing", status: 404, body: {})
+
+        expect {
+          install(root, http, save: "rails/missing")
+        }.to raise_error(RubySkills::Error)
+        expect(root.join("Skillfile")).not_to exist
+        expect(root.join("Skills.lock")).not_to exist
+      end
+    end
+  end
+
+  it "installs transitives and records only the saved skill as a direct dependency" do
+    with_tmp_project do |root|
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      publish(http, root, name: "rails/conventions", versions: %w[1.8.0])
+      publish(
+        http,
+        root,
+        name: "rails/request-specs",
+        versions: %w[2.1.4],
+        dependencies: { "2.1.4" => [["rails/conventions", "~> 1.8"]] }
+      )
+      write_skillfile(root, %(source "https://rubyskills.org"\n))
+
+      output = install(root, http, save: "rails/request-specs")
+      lockfile = RubySkills::Lockfile.load(root.join("Skills.lock"))
+
+      expect(output).to include(
+        "Fetching rails/request-specs 2.1.4",
+        "Fetching rails/conventions 1.8.0",
+        "Added rails/request-specs (~> 2.1)"
+      )
+      expect(lockfile.dependencies).to eq(
+        [
+          RubySkills::Dependency.new(
+            name: "rails/request-specs",
+            requirement: Gem::Requirement.new("~> 2.1")
+          )
+        ]
+      )
+      expect(root.join(".ruby-skills", "rails", "conventions", "1.8.0")).to be_directory
     end
   end
 end

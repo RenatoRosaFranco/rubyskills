@@ -133,8 +133,9 @@ ruby-skills config registry https://staging.rubyskills.org
 | `whoami [--json]` | token | Print the logged-in username and email |
 | `info SKILL` | no | Public registry metadata |
 | `publish [PATH]` | token | Upload an immutable version |
-| `install SKILL` | no | Extract into `.ruby-skills/ns/name/ver` |
+| `install [SKILL] [--save] [--version]` | no | Skillfile graph, or one registry skill |
 | `outdated [SKILL] [--json]` | no | Report newer registry versions (read-only) |
+| `sync [--agent] [--dry-run]` | no | Mirror locked skills into detected agents |
 | `list [--json]` | no | Read `Skills.lock` (legacy) |
 | `update [SKILL]` | — | Skillfile + registry (install ≠ update) |
 | `remove SKILL` | — | Flat `.ruby-skills/NAME` or `--save` |
@@ -147,7 +148,10 @@ ruby-skills config registry https://staging.rubyskills.org
 path. It does **not** operate on the canonical
 `.ruby-skills/namespace/name/version` layout that `install` writes.
 
-Also not in this cycle: automatic sync to Claude, Cursor, Codex, or VS Code.
+`sync` reads that canonical layout and the project lockfile, then writes
+disposable symlinks into detected agent directories (`.claude/skills`,
+`.codex/skills`, `.cursor/skills`, `.vscode/skills`). It does not copy
+credentials or rewrite unrelated agent configuration.
 
 The VS Code extension lives in
 [`rubyskills-plugins/rubyskills-vscode`](../rubyskills-plugins/rubyskills-vscode).

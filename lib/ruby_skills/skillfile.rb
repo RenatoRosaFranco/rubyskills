@@ -42,6 +42,54 @@ module RubySkills
       # @raise [Error] if no Skillfile exists in that ancestry
       def find(starting_directory = Dir.pwd, default_source: nil)
         start = Pathname.new(starting_directory).expand_path
+        found = search(start, default_source: default_source)
+        return found if found
+
+        raise Error.new(
+          "Skillfile not found (searched from #{start})",
+          filename: start.join(FILENAME)
+        )
+      end
+
+      # Like {find}, but builds an in-memory Skillfile at +starting_directory+
+      # when none exists. Does not write the file.
+      #
+      # @param starting_directory [String, Pathname]
+      # @param default_source [String, nil]
+      # @return [Skillfile]
+      def find_or_build(starting_directory = Dir.pwd, default_source: nil)
+        start = Pathname.new(starting_directory).expand_path
+        found = search(start, default_source: default_source)
+        return found if found
+
+        dir = start.directory? ? start : start.dirname
+        source = default_source || configured_registry
+        new(path: dir.join(FILENAME), source: source, dependencies: [], source_declared: true)
+      end
+
+      # Pessimistic requirement for a resolved version (+2.1.4+ → +~> 2.1+).
+      #
+      # Uses three segments (+~> 2.1.4+) when +skillfile+ already writes
+      # patch-level pessimistic constraints.
+      #
+      # @param version [Gem::Version, String]
+      # @param skillfile [Skillfile]
+      # @return [String]
+      def pessimistic_requirement(version, skillfile:)
+        segments = Gem::Version.new(version).canonical_segments.grep(Integer)
+        count = pessimistic_segment_count(skillfile)
+        parts = segments.first(count)
+        parts << 0 while parts.size < 2
+        parts << 0 if count >= 3 && parts.size < 3
+        "~> #{parts.join(".")}"
+      end
+
+      private
+
+      # @param start [Pathname]
+      # @param default_source [String, nil]
+      # @return [Skillfile, nil]
+      def search(start, default_source:)
         dir = start.directory? ? start : start.dirname
 
         loop do
@@ -54,13 +102,22 @@ module RubySkills
           dir = parent
         end
 
-        raise Error.new(
-          "Skillfile not found (searched from #{start})",
-          filename: start.join(FILENAME)
-        )
+        nil
       end
 
-      private
+      # @param skillfile [Skillfile]
+      # @return [Integer]
+      def pessimistic_segment_count(skillfile)
+        counts = skillfile.dependencies.filter_map { |dependency|
+          text = dependency.requirement.to_s.strip
+          next unless text.start_with?("~>")
+
+          text.delete_prefix("~>").strip.split(".").size
+        }
+        return 2 if counts.empty?
+
+        counts.max >= 3 ? 3 : 2
+      end
 
       # @param path [Pathname]
       # @param default_source [String, nil]
@@ -106,11 +163,11 @@ module RubySkills
     # @param path [Pathname]
     # @param source [String]
     # @param dependencies [Array<Dependency>]
-    def initialize(path:, source:, dependencies:)
+    def initialize(path:, source:, dependencies:, source_declared: false)
       @path = Pathname.new(path)
       @source = source
       @dependencies = dependencies
-      @source_declared = false
+      @source_declared = source_declared
     end
 
     # @param name [String]
@@ -140,6 +197,27 @@ module RubySkills
     def add(name, requirement = nil)
       declare_skill(name, requirement, location: nil)
       find(name)
+    end
+
+    # Replace the requirement of an existing declaration. Does not write.
+    #
+    # @param name [String]
+    # @param requirement [String, Gem::Requirement]
+    # @return [Dependency]
+    # @raise [Error] if +name+ is not declared
+    def replace_requirement(name, requirement)
+      identifier = name.to_s.strip
+      unless include?(identifier)
+        raise Error.new("#{identifier} is not declared in Skillfile", filename: @path)
+      end
+
+      parsed = parse_requirement(identifier, requirement, location: nil)
+      @dependencies.map! do |dependency|
+        next dependency unless dependency.name == identifier
+
+        Dependency.new(name: identifier, requirement: parsed)
+      end
+      find(identifier)
     end
 
     # Remove a declared skill in memory. Does not write the file.

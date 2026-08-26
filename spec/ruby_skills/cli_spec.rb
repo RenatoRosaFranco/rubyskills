@@ -877,11 +877,87 @@ RSpec.describe RubySkills::CLI do
 
         expect {
           described_class.start(["install", "rails/request-specs", "--save"])
-        }.to output(/Writing Skills.lock/).to_stdout
+        }.to output(
+          a_string_including(
+            "Adding rails/request-specs to Skillfile...",
+            "Resolving dependencies...",
+            "✓ installed",
+            "✓ Skillfile updated",
+            "✓ Skills.lock updated",
+            "Added rails/request-specs (~> 1.4)"
+          )
+        ).to_stdout
 
-        expect(skillfile.read).to include('skill "rails/request-specs"')
+        expect(skillfile.read).to include('skill "rails/request-specs", "~> 1.4"')
         expect(RubySkills::Lockfile.load(root.join("Skills.lock")).locked?("rails/request-specs"))
           .to be true
+      end
+    end
+
+    it "writes an exact requirement when --save uses @version" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        stub_published_skill(http, root)
+        stub_registry_client(http)
+        root.join("Skillfile").write(%(source "https://rubyskills.org"\n))
+
+        expect {
+          described_class.start(["install", "rails/request-specs@1.4.2", "--save"])
+        }.to output(%r{Added rails/request-specs \(= 1.4.2\)}).to_stdout
+
+        expect(root.join("Skillfile").read).to include(
+          'skill "rails/request-specs", "= 1.4.2"'
+        )
+      end
+    end
+
+    it "writes --version exactly when --save is given" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        stub_published_skill(http, root)
+        stub_registry_client(http)
+        root.join("Skillfile").write(%(source "https://rubyskills.org"\n))
+
+        expect {
+          described_class.start(
+            ["install", "rails/request-specs", "--save", "--version", "~> 1.4"]
+          )
+        }.to output(%r{Added rails/request-specs \(~> 1.4\)}).to_stdout
+
+        expect(root.join("Skillfile").read).to include(
+          'skill "rails/request-specs", "~> 1.4"'
+        )
+      end
+    end
+
+    it "creates a Skillfile when --save runs without one" do
+      with_user_config_home do
+        with_tmp_project do |root|
+          http = RubySkillsSpec::FakeRegistryHttp.new
+          stub_published_skill(http, root)
+          stub_registry_client(http)
+
+          expect {
+            described_class.start(["install", "rails/request-specs", "--save"])
+          }.to output(%r{Added rails/request-specs \(~> 1.4\)}).to_stdout
+
+          expect(root.join("Skillfile").read).to include(
+            'source "https://rubyskills.org"',
+            'skill "rails/request-specs", "~> 1.4"'
+          )
+        end
+      end
+    end
+
+    it "exits 1 when --version is given without --save" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(
+              ["install", "rails/request-specs", "--version", "~> 1.4"]
+            )
+          }.to output(/Error: --version requires --save/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
       end
     end
   end
@@ -1244,6 +1320,152 @@ RSpec.describe RubySkills::CLI do
             described_class.start(["outdated", "rails/security"])
           }.to output(%r{Error:.*rails/security.*Skillfile}).to_stdout
         }.to raise_error(SystemExit) { |error| expect(error.status).to eq(2) }
+      end
+    end
+  end
+
+  describe "sync" do
+    def checksum(name, version)
+      "sha256:#{Digest::SHA256.hexdigest("#{name}@#{version}")}"
+    end
+
+    def plant_installed(root, name, version)
+      path = RubySkills::Install.destination(
+        name, version, config: RubySkills::Config.new(root: root)
+      )
+      FileUtils.mkdir_p(path)
+      path.join("SKILL.md").write("# #{name}\n")
+      path
+    end
+
+    def write_sync_project(root)
+      root.join("Skillfile").write(<<~RUBY)
+        source "https://rubyskills.org"
+        skill "rails/conventions", "~> 1.3"
+        skill "rails/request-specs", "~> 2.1"
+      RUBY
+      write_lock(root, "2.1.4")
+      plant_installed(root, "rails/conventions", "1.3.2")
+      plant_installed(root, "rails/request-specs", "2.1.4")
+    end
+
+    def write_lock(root, request_specs_version)
+      RubySkills::Lockfile.new(
+        source: "https://rubyskills.org",
+        skills: [
+          RubySkills::LockedSkill.new(
+            name: "rails/conventions",
+            version: "1.3.2",
+            checksum: checksum("rails/conventions", "1.3.2")
+          ),
+          RubySkills::LockedSkill.new(
+            name: "rails/request-specs",
+            version: request_specs_version,
+            checksum: checksum("rails/request-specs", request_specs_version)
+          )
+        ],
+        dependencies: [
+          RubySkills::Dependency.new(
+            name: "rails/conventions",
+            requirement: Gem::Requirement.new("~> 1.3")
+          ),
+          RubySkills::Dependency.new(
+            name: "rails/request-specs",
+            requirement: Gem::Requirement.new("~> 2.1")
+          )
+        ]
+      ).write(root.join("Skills.lock"))
+    end
+
+    it "mirrors locked skills into detected agents" do
+      with_tmp_project do |root|
+        write_sync_project(root)
+        FileUtils.mkdir_p(root.join(".claude"))
+        FileUtils.mkdir_p(root.join(".codex"))
+
+        expect {
+          described_class.start(["sync"])
+        }.to output(
+          a_string_including(
+            "Synchronizing Ruby Skills...",
+            "Claude",
+            "  ✓ rails/conventions@1.3.2",
+            "  ✓ rails/request-specs@2.1.4",
+            "Codex",
+            "Cursor",
+            "  not detected",
+            "Synced 2 skills to 2 agents."
+          )
+        ).to_stdout
+
+        expect(root.join(".claude", "skills", "rails-conventions@1.3.2")).to be_symlink
+        expect(root.join(".codex", "skills", "rails-request-specs@2.1.4")).to be_symlink
+      end
+    end
+
+    it "limits output to one agent" do
+      with_tmp_project do |root|
+        write_sync_project(root)
+        FileUtils.mkdir_p(root.join(".claude"))
+        FileUtils.mkdir_p(root.join(".codex"))
+
+        expect {
+          described_class.start(["sync", "--agent", "claude"])
+        }.to output(
+          a_string_including("Claude", "Synced 2 skills to 1 agent.")
+        ).to_stdout
+
+        expect(root.join(".claude", "skills", "rails-conventions@1.3.2")).to be_symlink
+        expect(root.join(".codex", "skills")).not_to exist
+      end
+    end
+
+    it "prints pending adds and removes for --dry-run" do
+      with_tmp_project do |root|
+        write_sync_project(root)
+        FileUtils.mkdir_p(root.join(".claude"))
+        expect {
+          described_class.start(["sync", "--agent", "claude"])
+        }.to output(/Synced 2 skills to 1 agent/).to_stdout
+        FileUtils.rm_rf(root.join(".ruby-skills", "rails", "request-specs", "2.1.4"))
+        plant_installed(root, "rails/request-specs", "2.0.0")
+        write_lock(root, "2.0.0")
+
+        expect {
+          described_class.start(["sync", "--agent", "claude", "--dry-run"])
+        }.to output(
+          a_string_including(
+            "Would add:",
+            "  Claude: rails/request-specs@2.0.0",
+            "Would remove:",
+            "  Claude: rails/request-specs@2.1.4"
+          )
+        ).to_stdout
+
+        expect(root.join(".claude", "skills", "rails-request-specs@2.1.4")).to be_symlink
+        expect(root.join(".claude", "skills", "rails-request-specs@2.0.0")).not_to exist
+      end
+    end
+
+    it "exits 1 when Skillfile is missing" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(["sync"])
+          }.to output(/Error:.*Skillfile not found/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "exits 1 for an unknown agent" do
+      with_tmp_project do |root|
+        write_sync_project(root)
+
+        expect {
+          expect {
+            described_class.start(["sync", "--agent", "intellij"])
+          }.to output(/Error: Unknown agent "intellij"/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
       end
     end
   end

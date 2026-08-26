@@ -185,6 +185,58 @@ RSpec.describe RubySkills::Skillfile do
     end
   end
 
+  describe ".find_or_build" do
+    it "returns the nearest Skillfile when one exists" do
+      with_user_config_home do
+        with_tmp_project do |root|
+          write_skillfile(root, 'skill "rails/conventions"')
+          nested = root.join("app")
+          FileUtils.mkdir_p(nested)
+
+          skillfile = described_class.find_or_build(nested)
+
+          expect(skillfile.path).to eq(root.join("Skillfile"))
+          expect(skillfile).to include("rails/conventions")
+        end
+      end
+    end
+
+    it "builds an in-memory Skillfile without writing" do
+      with_user_config_home do
+        with_tmp_project do |root|
+          skillfile = described_class.find_or_build(root)
+
+          expect(skillfile.path).to eq(root.join("Skillfile"))
+          expect(skillfile.source).to eq("https://rubyskills.org")
+          expect(skillfile.dependencies).to be_empty
+          expect(root.join("Skillfile")).not_to exist
+        end
+      end
+    end
+  end
+
+  describe ".pessimistic_requirement" do
+    it "writes a two-segment pessimistic constraint by default" do
+      with_tmp_project do |root|
+        skillfile = load_skillfile(root, 'skill "rails/conventions", "~> 1.0"')
+
+        expect(
+          described_class.pessimistic_requirement("2.1.4", skillfile: skillfile)
+        ).to eq("~> 2.1")
+      end
+    end
+
+    it "follows patch-level pessimistic constraints already in the Skillfile" do
+      with_tmp_project do |root|
+        skillfile = load_skillfile(root, 'skill "rails/conventions", "~> 1.3.2"')
+
+        expect(
+          described_class.pessimistic_requirement("2.1.4", skillfile: skillfile)
+        ).to eq("~> 2.1.4")
+      end
+    end
+  end
+
   describe ".find" do
     it "walks parent directories until it finds a Skillfile" do
       with_user_config_home do
@@ -237,6 +289,35 @@ RSpec.describe RubySkills::Skillfile do
         expect(reloaded).to include("rails/request-specs")
         expect(reloaded.find("rails/request-specs").requirement).to eq(
           Gem::Requirement.default
+        )
+      end
+    end
+  end
+
+  describe "#replace_requirement" do
+    it "updates the requirement in memory without writing" do
+      with_tmp_project do |root|
+        path = write_skillfile(root, 'skill "rails/request-specs", "~> 2.1"')
+        original = path.read
+        skillfile = described_class.load(path)
+        skillfile.replace_requirement("rails/request-specs", "= 2.1.4")
+
+        expect(skillfile.find("rails/request-specs").requirement).to eq(
+          Gem::Requirement.new("= 2.1.4")
+        )
+        expect(path.read).to eq(original)
+      end
+    end
+
+    it "raises when the skill is not declared" do
+      with_tmp_project do |root|
+        skillfile = load_skillfile(root, 'skill "rails/conventions"')
+
+        expect {
+          skillfile.replace_requirement("rails/request-specs", "~> 2.0")
+        }.to raise_error(
+          RubySkills::Skillfile::Error,
+          a_string_including("rails/request-specs is not declared in Skillfile")
         )
       end
     end

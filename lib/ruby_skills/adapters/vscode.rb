@@ -7,6 +7,9 @@ module RubySkills
     # @see RubySkills::Adapters::Base
     # @since 0.1.0
     class Vscode < Base
+      # Human-readable agent name used by +ruby-skills sync+.
+      DISPLAY_NAME = "VS Code"
+
       # Path fragments that locate VS Code skills.
       #
       # @return [Hash{Symbol => String}]

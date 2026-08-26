@@ -55,29 +55,24 @@ module RubySkills
     desc "install [SKILL]", "Install Skillfile dependencies or a registry skill"
     option :save, type: :boolean, default: false,
                   desc: "Add SKILL to Skillfile and refresh Skills.lock"
+    option :version, type: :string,
+                     desc: "Version requirement to write in Skillfile (requires --save)"
     # Install every Skillfile dependency, or one registry skill.
     #
     # With no +SKILL+, find the nearest Skillfile, resolve against Skills.lock,
     # and install missing artifacts. With +SKILL+, install that skill from the
-    # registry. +--save+ appends +SKILL+ to the Skillfile and refreshes the lock.
+    # registry. +--save+ persists +SKILL+ in the Skillfile after a successful
+    # install. +--version+ writes that requirement; +SKILL@2.1.4+ writes += 2.1.4+.
     #
     # @param name [String, nil] +namespace/name+, or +nil+ for a project install
     # @return [void]
     # @raise [SystemExit] when the skill cannot be installed
     def install(name = nil)
       identifier = name.to_s.strip
-      if options[:save] && identifier.empty?
-        say "Error: --save requires a skill name (namespace/name)", :red
-        exit 1
-      end
-
-      if identifier.empty?
-        run_project_install
-      elsif options[:save]
-        run_project_install(save: identifier)
-      else
-        run_direct_install(identifier)
-      end
+      version = options[:version]
+      require_save_for_version!(version)
+      require_name_for_save!(identifier)
+      dispatch_install(identifier, version)
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 1
@@ -174,6 +169,26 @@ module RubySkills
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 2
+    end
+
+    desc "sync", "Expose installed skills to supported coding agents"
+    option :agent, type: :string,
+                   desc: "Sync only this agent (claude, codex, cursor, vscode)"
+    option :dry_run, type: :boolean, default: false,
+                     desc: "Show pending adapter changes without writing"
+    # Mirror locked skills into detected agent directories.
+    #
+    # Canonical +.ruby-skills+ storage is not modified. Missing agents are
+    # reported as not detected. +--agent+ limits the run to one adapter.
+    # +--dry-run+ prints pending adds and removes without writing.
+    #
+    # @return [void]
+    # @raise [SystemExit] when the project cannot be synchronized
+    def sync
+      Sync.new(agent: options[:agent], dry_run: options[:dry_run]).run
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
     end
 
     desc "validate [PATH]", "Validate a local Ruby Skill"
@@ -344,10 +359,47 @@ module RubySkills
       end
 
       # @api private
-      # @param save [String, nil]
+      # @param version [String, nil]
       # @return [void]
-      def run_project_install(save: nil)
-        ProjectInstall.new(save: save).run
+      def require_save_for_version!(version)
+        return unless version
+        return if options[:save]
+
+        say "Error: --version requires --save", :red
+        exit 1
+      end
+
+      # @api private
+      # @param identifier [String]
+      # @return [void]
+      def require_name_for_save!(identifier)
+        return unless options[:save]
+        return unless identifier.empty?
+
+        say "Error: --save requires a skill name (namespace/name)", :red
+        exit 1
+      end
+
+      # @api private
+      # @param identifier [String]
+      # @param version [String, nil]
+      # @return [void]
+      def dispatch_install(identifier, version)
+        if identifier.empty?
+          run_project_install
+        elsif options[:save]
+          run_project_install(save: identifier, version: version)
+        else
+          run_direct_install(identifier)
+        end
+      end
+
+      # @api private
+      # @param save [String, nil]
+      # @param version [String, nil]
+      # @return [void]
+      def run_project_install(save: nil, version: nil)
+        ProjectInstall.new(save: save, version: version).run
       end
 
       # @api private

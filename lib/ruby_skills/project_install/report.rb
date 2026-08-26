@@ -42,6 +42,53 @@ module RubySkills
       end
 
       # @return [void]
+      def adding(name)
+        @io.puts "Adding #{name} to Skillfile..."
+        @io.puts
+      end
+
+      # @param dependency [Dependency]
+      # @return [void]
+      def already_declared(dependency)
+        @io.puts "#{dependency.name} is already declared in Skillfile " \
+                 "(#{dependency.requirement})"
+      end
+
+      # @return [void]
+      def resolving_dependencies
+        @io.puts "Resolving dependencies..."
+      end
+
+      # @return [void]
+      def checksums_verified
+        @io.puts
+        @io.puts "✓ checksums verified"
+      end
+
+      # @return [void]
+      def installed_ok
+        @io.puts "✓ installed"
+      end
+
+      # @return [void]
+      def skillfile_updated
+        @io.puts "✓ Skillfile updated"
+      end
+
+      # @return [void]
+      def lock_updated
+        @io.puts "✓ Skills.lock updated"
+        @io.puts
+      end
+
+      # @param name [String]
+      # @param requirement [Gem::Requirement]
+      # @return [void]
+      def added(name, requirement)
+        @io.puts "Added #{name} (#{requirement})"
+      end
+
+      # @return [void]
       def writing_lock
         @io.puts
         @io.puts "Writing Skills.lock"

@@ -155,6 +155,27 @@ module RubySkills
       exit 1
     end
 
+    desc "outdated [SKILL]", "Show available updates for Skillfile dependencies"
+    option :json, type: :boolean, default: false, aliases: "-j",
+                  desc: "Output outdated status as JSON"
+    # Compare Skills.lock pins to the newest registry versions.
+    #
+    # Does not rewrite Skillfile, Skills.lock, or installed artifacts.
+    # Exit +0+ when every listed skill is current, +1+ when any row is not,
+    # and +2+ when the project or registry cannot be read.
+    #
+    # @param name [String, nil] +namespace/name+, or +nil+ for every Skillfile skill
+    # @return [void]
+    # @raise [SystemExit]
+    def outdated(name = nil)
+      result = Outdated.new(name: name).run
+      print_outdated(result)
+      exit result.exit_status unless result.exit_status.zero?
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 2
+    end
+
     desc "validate [PATH]", "Validate a local Ruby Skill"
     # Validate the current directory or +PATH+ as a skill.
     #
@@ -605,6 +626,18 @@ module RubySkills
         end
 
         say "Error: #{result.error.message}", :red
+      end
+
+      # @api private
+      # @param result [RubySkills::Outdated::Result]
+      # @return [void]
+      def print_outdated(result)
+        if options[:json]
+          puts JSON.generate(result.as_json)
+          return
+        end
+
+        say Outdated::Report.new(result).to_s.chomp
       end
 
       # @api private

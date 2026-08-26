@@ -134,22 +134,20 @@ ruby-skills config registry https://staging.rubyskills.org
 | `info SKILL` | no | Public registry metadata |
 | `publish [PATH]` | token | Upload an immutable version |
 | `install SKILL` | no | Extract into `.ruby-skills/ns/name/ver` |
+| `outdated [SKILL] [--json]` | no | Report newer registry versions (read-only) |
 | `list [--json]` | no | Read `Skills.lock` (legacy) |
-| `update [SKILL]` | — | Skillfile + editor adapters (legacy) |
-| `remove SKILL` | — | Flat `.ruby-skills/NAME` (legacy) |
+| `update [SKILL]` | — | Skillfile + registry (install ≠ update) |
+| `remove SKILL` | — | Flat `.ruby-skills/NAME` or `--save` |
 
 `help` is the default command. `-h` and `--help` are aliases.
 
 ## What is not in this cycle yet
 
-`list`, `update`, and `remove` still belong to the old Skillfile /
-`Skills.lock` / editor-adapter path. They do **not** operate on the
-canonical `.ruby-skills/namespace/name/version` layout that `install`
-writes.
+`list` still belongs to the old Skillfile / `Skills.lock` / editor-adapter
+path. It does **not** operate on the canonical
+`.ruby-skills/namespace/name/version` layout that `install` writes.
 
-Also not in this cycle: Skillfile pointing at the registry, lockfile
-checksums, version pins on the CLI, `outdated`, skill dependencies, and
-automatic sync to Claude, Cursor, Codex, or VS Code.
+Also not in this cycle: automatic sync to Claude, Cursor, Codex, or VS Code.
 
 The VS Code extension lives in
 [`rubyskills-plugins/rubyskills-vscode`](../rubyskills-plugins/rubyskills-vscode).

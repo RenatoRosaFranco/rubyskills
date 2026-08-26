@@ -1035,6 +1035,219 @@ RSpec.describe RubySkills::CLI do
     end
   end
 
+  describe "outdated" do
+    def stub_catalog
+      client = RubySkillsSpec::CatalogClient.new
+      yield client
+      allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+      client
+    end
+
+    def write_outdated_project(root)
+      root.join("Skillfile").write(<<~RUBY)
+        source "https://rubyskills.org"
+
+        skill "rails/conventions", "~> 1.0"
+        skill "rails/request-specs", "~> 2.1.0"
+        skill "ruby/gem-development", "~> 0.4.0"
+      RUBY
+      RubySkills::Lockfile.new(
+        source: "https://rubyskills.org",
+        skills: [
+          RubySkills::LockedSkill.new(
+            name: "rails/conventions",
+            version: "1.2.0",
+            checksum: "sha256:#{Digest::SHA256.hexdigest("rails/conventions@1.2.0")}"
+          ),
+          RubySkills::LockedSkill.new(
+            name: "rails/request-specs",
+            version: "2.1.4",
+            checksum: "sha256:#{Digest::SHA256.hexdigest("rails/request-specs@2.1.4")}"
+          ),
+          RubySkills::LockedSkill.new(
+            name: "ruby/gem-development",
+            version: "0.4.1",
+            checksum: "sha256:#{Digest::SHA256.hexdigest("ruby/gem-development@0.4.1")}"
+          )
+        ],
+        dependencies: [
+          RubySkills::Dependency.new(
+            name: "rails/conventions",
+            requirement: Gem::Requirement.new("~> 1.0")
+          ),
+          RubySkills::Dependency.new(
+            name: "rails/request-specs",
+            requirement: Gem::Requirement.new("~> 2.1.0")
+          ),
+          RubySkills::Dependency.new(
+            name: "ruby/gem-development",
+            requirement: Gem::Requirement.new("~> 0.4.0")
+          )
+        ]
+      ).write(root.join("Skills.lock"))
+    end
+
+    def stub_example_catalog
+      stub_catalog { |registry|
+        registry.add("rails/conventions", "1.2.0")
+        registry.add("rails/conventions", "1.4.3")
+        registry.add("rails/conventions", "2.0.0")
+        registry.add("rails/request-specs", "2.1.4")
+        registry.add("rails/request-specs", "2.2.0")
+        registry.add("ruby/gem-development", "0.4.1")
+      }
+    end
+
+    it "prints a table of current, allowed, and latest versions" do
+      with_tmp_project do |root|
+        write_outdated_project(root)
+        stub_example_catalog
+
+        expect {
+          expect {
+            described_class.start(["outdated"])
+          }.to output(
+            a_string_including(
+              "Skill",
+              "Current",
+              "Allowed",
+              "Latest",
+              "Status",
+              "rails/conventions",
+              "1.2.0",
+              "1.4.3",
+              "2.0.0",
+              "update available",
+              "rails/request-specs",
+              "constrained",
+              "ruby/gem-development",
+              "current"
+            )
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+
+        expect(root.join("Skillfile").read).to include("rails/conventions")
+        expect(RubySkills::Lockfile.load(root.join("Skills.lock")).find("rails/conventions").version)
+          .to eq(Gem::Version.new("1.2.0"))
+      end
+    end
+
+    it "prints JSON when --json is given" do
+      with_tmp_project do |root|
+        write_outdated_project(root)
+        stub_example_catalog
+
+        expect {
+          expect {
+            described_class.start(["outdated", "--json"])
+          }.to output(
+            "#{JSON.generate(
+              [
+                {
+                  "name" => "rails/conventions",
+                  "current" => "1.2.0",
+                  "allowed" => "1.4.3",
+                  "latest" => "2.0.0",
+                  "status" => "update_available"
+                },
+                {
+                  "name" => "rails/request-specs",
+                  "current" => "2.1.4",
+                  "allowed" => "2.1.4",
+                  "latest" => "2.2.0",
+                  "status" => "constrained"
+                },
+                {
+                  "name" => "ruby/gem-development",
+                  "current" => "0.4.1",
+                  "allowed" => "0.4.1",
+                  "latest" => "0.4.1",
+                  "status" => "current"
+                }
+              ]
+            )}\n"
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "limits output to one Skillfile dependency" do
+      with_tmp_project do |root|
+        write_outdated_project(root)
+        stub_example_catalog
+
+        expect {
+          expect {
+            described_class.start(["outdated", "rails/conventions"])
+          }.to output(
+            a_string_including(
+              "rails/conventions",
+              "1.2.0",
+              "1.4.3",
+              "2.0.0",
+              "update available"
+            )
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "exits 0 when every listed skill is current" do
+      with_tmp_project do |root|
+        root.join("Skillfile").write(<<~RUBY)
+          source "https://rubyskills.org"
+          skill "ruby/gem-development", "~> 0.4.0"
+        RUBY
+        RubySkills::Lockfile.new(
+          source: "https://rubyskills.org",
+          skills: [
+            RubySkills::LockedSkill.new(
+              name: "ruby/gem-development",
+              version: "0.4.1",
+              checksum: "sha256:#{Digest::SHA256.hexdigest("ruby/gem-development@0.4.1")}"
+            )
+          ],
+          dependencies: [
+            RubySkills::Dependency.new(
+              name: "ruby/gem-development",
+              requirement: Gem::Requirement.new("~> 0.4.0")
+            )
+          ]
+        ).write(root.join("Skills.lock"))
+        stub_catalog do |registry|
+          registry.add("ruby/gem-development", "0.4.1")
+        end
+
+        expect {
+          described_class.start(["outdated"])
+        }.to output(a_string_including("ruby/gem-development", "current")).to_stdout
+      end
+    end
+
+    it "exits 2 when Skillfile is missing" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(["outdated"])
+          }.to output(/Error:.*Skillfile not found/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(2) }
+      end
+    end
+
+    it "exits 2 when the named skill is not in the Skillfile" do
+      with_tmp_project do |root|
+        write_outdated_project(root)
+        stub_example_catalog
+
+        expect {
+          expect {
+            described_class.start(["outdated", "rails/security"])
+          }.to output(%r{Error:.*rails/security.*Skillfile}).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(2) }
+      end
+    end
+  end
+
   describe "remove" do
     def config_for(root)
       RubySkills::Config.new(root: root)

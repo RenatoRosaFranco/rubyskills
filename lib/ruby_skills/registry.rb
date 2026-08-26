@@ -44,6 +44,15 @@ module RubySkills
     # Issued API token from +POST /api/v1/auth/token+.
     Token = Struct.new(:token, :token_type, keyword_init: true)
 
+    # Logged-in registry user from +GET /api/v1/auth/me+.
+    CurrentUser = Struct.new(:username, :email, keyword_init: true) do
+      # @param payload [Hash]
+      # @return [CurrentUser]
+      def self.from_payload(payload)
+        new(username: payload["username"], email: payload["email"])
+      end
+    end
+
     # Pending browser login from +POST /api/v1/auth/device+.
     DeviceLogin = Struct.new(
       :device_code, :verification_uri, :expires_in, :interval,

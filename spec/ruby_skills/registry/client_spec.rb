@@ -86,6 +86,29 @@ RSpec.describe RubySkills::Registry::Client do
     end
   end
 
+  describe "#current_user" do
+    it "returns the username and email for the stored token" do
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      http.stub(
+        :get,
+        "/api/v1/auth/me",
+        status: 200,
+        body: { "username" => "johndoe", "email" => "johen@doe.com" }
+      )
+
+      user = client_for(http, token: "rsk_secret").current_user
+
+      expect(user).to have_attributes(username: "johndoe", email: "johen@doe.com")
+      expect(http.requests.last.headers["Authorization"]).to eq("Bearer rsk_secret")
+    end
+
+    it "raises when no token is stored" do
+      expect {
+        client_for(RubySkillsSpec::FakeRegistryHttp.new).current_user
+      }.to raise_error(RubySkills::Registry::Error, "API token is missing or invalid")
+    end
+  end
+
   describe "device authorization" do
     def device_payload
       {

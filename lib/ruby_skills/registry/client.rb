@@ -110,6 +110,15 @@ module RubySkills
         raise error
       end
 
+      # Current registry user for the stored API token.
+      #
+      # @return [CurrentUser]
+      # @raise [Error]
+      def current_user
+        require_token!
+        CurrentUser.from_payload(json_body(request(:get, "/api/v1/auth/me")))
+      end
+
       # Publish a +.rskill+ artifact. Requires {#token}.
       #
       # @param name [String] +namespace/skill+

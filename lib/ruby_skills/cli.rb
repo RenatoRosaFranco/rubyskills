@@ -246,8 +246,30 @@ module RubySkills
     #
     # @return [void]
     def logout
-      Credentials.load.clear!
+      credentials = Credentials.load
+      if credentials.token.nil?
+        say "Not logged in."
+        return
+      end
+
+      credentials.clear!
       say "Logged out."
+    end
+
+    desc "whoami", "Show the logged-in registry user"
+    option :json, type: :boolean, default: false, aliases: "-j",
+                  desc: "Output username and email as JSON"
+    # Print the current registry user's username and email.
+    #
+    # @return [void]
+    # @raise [SystemExit] when no token is stored or the registry rejects it
+    def whoami
+      result = Whoami.new.run
+      print_whoami(result)
+      exit 1 unless result.success?
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
     end
 
     desc "version", "Display Ruby Skills version"
@@ -541,6 +563,36 @@ module RubySkills
         end
 
         say "Error: #{result.error.message}", :red
+      end
+
+      # @api private
+      # @param result [RubySkills::Whoami::Result]
+      # @return [void]
+      def print_whoami(result)
+        unless result.success?
+          if result.status == :unauthenticated
+            say "Not logged in."
+            say ""
+            say "Run:"
+            say ""
+            say "  ruby-skills login"
+            return
+          end
+
+          say "Error: #{result.error.message}", :red
+          return
+        end
+
+        if options[:json]
+          puts JSON.generate(
+            "username" => result.user.username,
+            "email" => result.user.email
+          )
+          return
+        end
+
+        say "username: #{result.user.username}"
+        say "email:    #{result.user.email}"
       end
 
       # @api private

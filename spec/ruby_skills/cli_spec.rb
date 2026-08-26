@@ -133,6 +133,76 @@ RSpec.describe RubySkills::CLI do
         expect(directory.join("credentials.yml")).not_to exist
       end
     end
+
+    it "does not claim to log out when no token is stored" do
+      with_user_config_home do
+        expect {
+          described_class.start(["logout"])
+        }.to output("Not logged in.\n").to_stdout
+      end
+    end
+  end
+
+  describe "whoami" do
+    it "prints the logged-in username and email" do
+      with_user_config_home do
+        RubySkills::Credentials.load.update_token!("rsk_secret")
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        http.stub(
+          :get,
+          "/api/v1/auth/me",
+          status: 200,
+          body: { "username" => "johndoe", "email" => "johen@doe.com" }
+        )
+        client = RubySkills::Registry::Client.new(
+          base_url: "https://rubyskills.org",
+          token: "rsk_secret",
+          http: http
+        )
+        allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+
+        expect {
+          described_class.start(["whoami"])
+        }.to output("username: johndoe\nemail:    johen@doe.com\n").to_stdout
+      end
+    end
+
+    it "prints JSON when --json is given" do
+      with_user_config_home do
+        RubySkills::Credentials.load.update_token!("rsk_secret")
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        http.stub(
+          :get,
+          "/api/v1/auth/me",
+          status: 200,
+          body: { "username" => "johndoe", "email" => "johen@doe.com" }
+        )
+        client = RubySkills::Registry::Client.new(
+          base_url: "https://rubyskills.org",
+          token: "rsk_secret",
+          http: http
+        )
+        allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+
+        expect {
+          described_class.start(["whoami", "--json"])
+        }.to output(
+          "#{JSON.generate("username" => "johndoe", "email" => "johen@doe.com")}\n"
+        ).to_stdout
+      end
+    end
+
+    it "asks the user to log in when no token is stored" do
+      with_user_config_home do
+        expect {
+          expect {
+            described_class.start(["whoami"])
+          }.to output(
+            a_string_including("Not logged in.", "ruby-skills login")
+          ).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
   end
 
   describe "list" do

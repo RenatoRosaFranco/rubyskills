@@ -1,12 +1,26 @@
 # ruby-skills
 
-Package manager for installing, updating, removing, and sharing AI development skills in Ruby and Rails projects.
+CLI for packaging, publishing, and installing Ruby engineering knowledge.
 
-Skills are declared in a `Skillfile`, copied into `.ruby-skills/`, recorded in `Skills.lock`, and exposed to editors through adapters (Claude, Codex, Cursor, VS Code).
+A published skill can be recovered on another machine **byte for byte**,
+identified by `namespace/name`, version, and SHA-256.
+
+Site and registry: [https://rubyskills.org](https://rubyskills.org)
+
+```
+Machine A                         Registry                      Machine B
+─────────                         ────────                      ─────────
+ruby-skills build
+ruby-skills publish  ─────────►  rails/request-specs
+                                 1.4.2
+                                 SHA-256 = A       ─────────►  ruby-skills install
+
+                                                               SHA-256(B) == A
+```
 
 ## Requirements
 
-- Ruby 3.2 or later
+- Ruby 3.1 or later
 - [Thor](https://github.com/rails/thor) `~> 1.3` (pulled in by the gem)
 
 ## Install
@@ -22,94 +36,130 @@ Once published:
 
 ```bash
 gem install ruby-skills
+ruby-skills version
 ```
 
 ## Quick start
 
-```bash
-ruby-skills init
-```
-
-That creates a `Skillfile` and a `.ruby-skills/` directory. Declare skills in the Skillfile:
-
-```ruby
-# Skillfile
-
-skill "rails-performance",
-  github: "username/rails-performance"
-
-skill "local-review",
-  path: "../skills/local-review",
-  version: "0.1.0"
-```
-
-Each `skill` needs exactly one source: `github:` (`owner/repo`) or `path:`. `version:` is optional.
-
-Then install:
+Publish:
 
 ```bash
-ruby-skills install
-ruby-skills install rails-performance
+ruby-skills init rails/request-specs
+cd request-specs
+# edit skill.yml, SKILL.md, and references/
+ruby-skills validate
+ruby-skills build
+ruby-skills login
+ruby-skills publish
+```
+
+Install (no token required):
+
+```bash
+ruby-skills info rails/request-specs
+ruby-skills install rails/request-specs
+```
+
+The skill lands in `.ruby-skills/rails/request-specs/<version>/`.
+`install` verifies the SHA-256 of the raw `.rskill` **before** extracting
+anything. A checksum mismatch writes no files.
+
+Published versions are **immutable**. To change knowledge, bump `version`
+in `skill.yml` and publish again.
+
+## Anatomy of a skill
+
+```
+request-specs/
+├── skill.yml
+├── SKILL.md
+└── references/
+    └── http.md
+```
+
+The canonical id is `namespace/name`. The version lives in `skill.yml` and
+follows RubyGems versioning. `build` writes a deterministic gzip+tar named
+`namespace-name-version.rskill` (for example
+`pkg/rails-request-specs-1.4.2.rskill`).
+
+## Auth
+
+`ruby-skills login` opens a browser (gcloud / Heroku style), you approve
+the CLI, then the token is stored locally. `--token rsk_...` skips the
+browser (CI, headless machines).
+
+```bash
+ruby-skills login
+ruby-skills whoami
+ruby-skills logout
+```
+
+```text
+username: johndoe
+email:    johen@doe.com
+```
+
+Credentials live under XDG, never in `config.yml`:
+
+| File | Mode | Contents |
+| --- | --- | --- |
+| `~/.config/ruby-skills/config.yml` | `0600` | registry origin |
+| `~/.config/ruby-skills/credentials.yml` | `0600` | token `rsk_...` |
+
+The directory is created `0700`. Resolution order:
+
+- Registry: `RUBY_SKILLS_REGISTRY_URL` → `config.yml` → `https://rubyskills.org`
+- Token: `RUBY_SKILLS_API_TOKEN` → `credentials.yml`
+
+`RUBY_SKILLS_NO_BROWSER=1` prints the login URL without launching a browser.
+`logout` only prints `Logged out.` when a token was actually stored.
+
+```bash
+ruby-skills config registry https://staging.rubyskills.org
 ```
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `ruby-skills init` | Create `Skillfile` and `.ruby-skills/` |
-| `ruby-skills install [SKILL]` | Install one skill, or every skill in the Skillfile |
-| `ruby-skills list` | Print installed skills from `Skills.lock` |
-| `ruby-skills list --json` | Same data as JSON (`-j`) |
-| `ruby-skills update [SKILL]` | Update one skill, or every installed skill |
-| `ruby-skills remove SKILL` | Remove an installed skill |
-| `ruby-skills version` | Print the gem version |
-| `ruby-skills help [COMMAND]` | Command help |
+| Command | Auth | What it does |
+| --- | --- | --- |
+| `help [COMMAND]` | no | List commands or describe one |
+| `version` | no | Print the gem version |
+| `init [NAME]` | no | Scaffold a skill (`namespace/name`) |
+| `validate [PATH]` | no | Validate a local skill |
+| `build [PATH]` | no | Write a `.rskill` to `pkg/` |
+| `config [KEY] [VALUE]` | no | Get or set the registry origin |
+| `login [--token]` | browser or token | Save `credentials.yml` |
+| `logout` | — | Remove the saved token |
+| `whoami [--json]` | token | Print the logged-in username and email |
+| `info SKILL` | no | Public registry metadata |
+| `publish [PATH]` | token | Upload an immutable version |
+| `install SKILL` | no | Extract into `.ruby-skills/ns/name/ver` |
+| `list [--json]` | no | Read `Skills.lock` (legacy) |
+| `update [SKILL]` | — | Skillfile + editor adapters (legacy) |
+| `remove SKILL` | — | Flat `.ruby-skills/NAME` (legacy) |
 
-Human-readable list:
+`help` is the default command. `-h` and `--help` are aliases.
 
-```
-Installed skills:
+## What is not in this cycle yet
 
-rails-performance                   0.1.0
-rails-security                      0.2.0
-```
+`list`, `update`, and `remove` still belong to the old Skillfile /
+`Skills.lock` / editor-adapter path. They do **not** operate on the
+canonical `.ruby-skills/namespace/name/version` layout that `install`
+writes.
 
-Machine-readable list (`ruby-skills list --json`):
+Also not in this cycle: Skillfile pointing at the registry, lockfile
+checksums, version pins on the CLI, `outdated`, skill dependencies, and
+automatic sync to Claude, Cursor, Codex, or VS Code.
 
-```json
-{
-  "skills": [
-    {
-      "name": "rails-performance",
-      "version": "0.1.0",
-      "source": "github:username/rails-performance"
-    }
-  ]
-}
-```
-
-An empty lockfile prints `{"skills":[]}`. Editors should consume `--json` instead of parsing the table.
-
-## Project files
-
-| Path | Role |
-| --- | --- |
-| `Skillfile` | Declared skills (Ruby DSL) |
-| `Skills.lock` | Installed name, version, and source |
-| `.ruby-skills/` | Local copies of installed skills |
-
-`Skillfile` and `Skills.lock` are gitignored in this repo because they are per-project workspace files created by `init` / `install`.
-
-## Editor plugins
-
-Install still notifies Claude, Codex, Cursor, and VS Code adapters so the skill is visible in those tools.
-
-The VS Code extension lives in [`rubyskills-plugins/rubyskills-vscode`](../rubyskills-plugins/rubyskills-vscode). It wraps this CLI and loads the sidebar from `ruby-skills list --json`.
+The VS Code extension lives in
+[`rubyskills-plugins/rubyskills-vscode`](../rubyskills-plugins/rubyskills-vscode).
+It still reads `ruby-skills list --json` from the legacy lockfile.
 
 ## Development
 
 ```bash
 bundle install
+bundle exec rspec
 ruby -Ilib bin/ruby-skills help
 ```
 
@@ -117,7 +167,8 @@ Library code is under `lib/ruby_skills/`. The executable is `bin/ruby-skills`.
 
 ## Releasing
 
-Publishing uses [Trusted Publishing](https://guides.rubygems.org/trusted-publishing/) (OIDC). There is no RubyGems API key in GitHub.
+Publishing uses [Trusted Publishing](https://guides.rubygems.org/trusted-publishing/)
+(OIDC). There is no RubyGems API key in GitHub.
 
 One-time setup:
 

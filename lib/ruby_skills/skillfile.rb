@@ -124,6 +124,31 @@ module RubySkills
       !find(name).nil?
     end
 
+    # Add a declared skill in memory. Does not write the file.
+    #
+    # @param name [String]
+    # @param requirement [String, Gem::Requirement, nil]
+    # @return [Dependency]
+    def add(name, requirement = nil)
+      declare_skill(name, requirement, location: nil)
+      find(name)
+    end
+
+    # Append +name+ to the Skillfile on disk. Call after {#add}.
+    #
+    # @param name [String]
+    # @return [void]
+    def append_skill(name)
+      dependency = find(name)
+      unless dependency
+        raise Error.new("Cannot append unknown skill #{name.inspect}", filename: @path)
+      end
+
+      text = @path.file? ? @path.read : ""
+      text += "\n" unless text.empty? || text.end_with?("\n")
+      @path.write("#{text}#{skill_line(dependency)}\n")
+    end
+
     # @return [Hash]
     def to_h
       {
@@ -171,6 +196,16 @@ module RubySkills
       extra.nil? &&
         namespace.to_s.match?(Manifest::IDENTIFIER) &&
         skill.to_s.match?(Manifest::IDENTIFIER)
+    end
+
+    # @param dependency [Dependency]
+    # @return [String]
+    def skill_line(dependency)
+      if dependency.requirement == Gem::Requirement.default
+        %(skill "#{dependency.name}")
+      else
+        %(skill "#{dependency.name}", "#{dependency.requirement}")
+      end
     end
 
     # @param name [String]

@@ -125,7 +125,9 @@ module RubySkills
       # @raise [RubySkills::Error]
       def verify_checksum!
         return if @expected_checksum.nil?
-        return if checksum.casecmp(@expected_checksum.to_s).zero?
+
+        expected = @expected_checksum.to_s.strip.delete_prefix("sha256:")
+        return if checksum.casecmp(expected).zero?
 
         raise RubySkills::Error, "Checksum mismatch"
       end

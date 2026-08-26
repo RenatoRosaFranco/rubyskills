@@ -215,4 +215,30 @@ RSpec.describe RubySkills::Skillfile do
       end
     end
   end
+
+  describe "#add" do
+    it "appends a skill line without rewriting existing declarations" do
+      with_tmp_project do |root|
+        path = write_skillfile(
+          root,
+          <<~RUBY
+            source "https://rubyskills.org"
+
+            skill "rails/conventions", "~> 1.0"
+          RUBY
+        )
+        skillfile = described_class.load(path)
+        skillfile.add("rails/request-specs")
+        skillfile.append_skill("rails/request-specs")
+
+        reloaded = described_class.load(path)
+        expect(path.read).to include('skill "rails/conventions", "~> 1.0"')
+        expect(path.read).to include('skill "rails/request-specs"')
+        expect(reloaded).to include("rails/request-specs")
+        expect(reloaded.find("rails/request-specs").requirement).to eq(
+          Gem::Requirement.default
+        )
+      end
+    end
+  end
 end

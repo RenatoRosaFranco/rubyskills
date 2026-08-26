@@ -47,6 +47,11 @@ module RubySkills
       "sha256:#{hex}"
     end
 
+    # @return [String] lowercase hex without the +sha256:+ prefix
+    def checksum_hex
+      checksum.delete_prefix("sha256:")
+    end
+
     # @param other [Object]
     # @return [Boolean]
     def ==(other)

@@ -86,6 +86,22 @@ RSpec.describe RubySkills::Lockfile do
       expect(first.serialize).to end_with("\n")
     end
 
+    it "replaces Skills.lock through a temporary file" do
+      with_tmp_project do |root|
+        path = root.join("Skills.lock")
+        path.write("stale\n")
+        lockfile = build_lock(
+          skills: [conventions],
+          dependencies: [dep("rails/conventions", "~> 1.0")]
+        )
+
+        lockfile.write(path)
+
+        expect(path.read).to eq(lockfile.serialize)
+        expect(root.glob(".Skills.lock.*.tmp")).to eq([])
+      end
+    end
+
     it "round-trips parse -> serialize -> parse" do
       with_tmp_project do |root|
         original = build_lock(

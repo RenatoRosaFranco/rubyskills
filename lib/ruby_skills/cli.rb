@@ -52,23 +52,32 @@ module RubySkills
       exit 1
     end
 
-    desc "install SKILL", "Install a skill from the registry"
-    # Download +SKILL+ from the registry into +.ruby-skills+.
+    desc "install [SKILL]", "Install Skillfile dependencies or a registry skill"
+    option :save, type: :boolean, default: false,
+                  desc: "Add SKILL to Skillfile and refresh Skills.lock"
+    # Install every Skillfile dependency, or one registry skill.
     #
-    # Does not read a Skillfile or sync editor adapters.
+    # With no +SKILL+, find the nearest Skillfile, resolve against Skills.lock,
+    # and install missing artifacts. With +SKILL+, install that skill from the
+    # registry. +--save+ appends +SKILL+ to the Skillfile and refreshes the lock.
     #
-    # @param name [String] +namespace/name+
+    # @param name [String, nil] +namespace/name+, or +nil+ for a project install
     # @return [void]
     # @raise [SystemExit] when the skill cannot be installed
     def install(name = nil)
-      if name.to_s.strip.empty?
-        say "Error: skill name is required (namespace/name)", :red
+      identifier = name.to_s.strip
+      if options[:save] && identifier.empty?
+        say "Error: --save requires a skill name (namespace/name)", :red
         exit 1
       end
 
-      result = Install.new(name).run
-      print_install(result)
-      exit 1 unless result.success?
+      if identifier.empty?
+        run_project_install
+      elsif options[:save]
+        run_project_install(save: identifier)
+      else
+        run_direct_install(identifier)
+      end
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 1
@@ -294,6 +303,22 @@ module RubySkills
             }
           end
         }
+      end
+
+      # @api private
+      # @param save [String, nil]
+      # @return [void]
+      def run_project_install(save: nil)
+        ProjectInstall.new(save: save).run
+      end
+
+      # @api private
+      # @param name [String]
+      # @return [void]
+      def run_direct_install(name)
+        result = Install.new(name).run
+        print_install(result)
+        exit 1 unless result.success?
       end
 
       # @api private

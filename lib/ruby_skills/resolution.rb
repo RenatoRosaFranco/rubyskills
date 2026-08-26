@@ -30,5 +30,16 @@ module RubySkills
     def find(name)
       @skills.find { |skill| skill.name == name }
     end
+
+    # @return [Lockfile]
+    def to_lockfile
+      Lockfile.new(
+        source: @source,
+        skills: @skills.map { |skill|
+          LockedSkill.new(name: skill.name, version: skill.version, checksum: skill.checksum)
+        },
+        dependencies: @dependencies
+      )
+    end
   end
 end

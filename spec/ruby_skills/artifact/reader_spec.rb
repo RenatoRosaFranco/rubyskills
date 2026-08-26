@@ -93,6 +93,18 @@ RSpec.describe RubySkills::Artifact::Reader do
       end
     end
 
+    it "accepts a sha256: prefixed registry checksum" do
+      with_tmp_project do |root|
+        result = build_from(root)
+        artifact = described_class.new(
+          result.path,
+          expected_checksum: "sha256:#{result.checksum}"
+        )
+
+        expect(artifact).to be_valid
+      end
+    end
+
     it "is false when the downloaded SHA-256 does not match the registry" do
       with_tmp_project do |root|
         result = build_from(root)

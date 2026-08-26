@@ -803,12 +803,86 @@ RSpec.describe RubySkills::CLI do
       }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
     end
 
-    it "exits 1 when SKILL is omitted" do
-      expect {
+    it "exits 1 when SKILL is omitted and no Skillfile exists" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(["install"])
+          }.to output(/Error:.*Skillfile not found/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "installs Skillfile dependencies and writes Skills.lock" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        stub_published_skill(http, root)
+        stub_registry_client(http)
+        root.join("Skillfile").write(<<~RUBY)
+          source "https://rubyskills.org"
+          skill "rails/request-specs", "~> 1.4.0"
+        RUBY
+
         expect {
           described_class.start(["install"])
-        }.to output(/Error: skill name is required/).to_stdout
-      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+        }.to output(
+          a_string_including(
+            "Reading Skillfile...",
+            "Resolving skills...",
+            "Fetching rails/request-specs 1.4.2",
+            "Installing rails/request-specs 1.4.2",
+            "Writing Skills.lock",
+            "Installed 1 skill."
+          )
+        ).to_stdout
+
+        expect(root.join(".ruby-skills", "rails", "request-specs", "1.4.2", "skill.yml")).to be_file
+        lockfile = RubySkills::Lockfile.load(root.join("Skills.lock"))
+        expect(lockfile.find("rails/request-specs").version).to eq(Gem::Version.new("1.4.2"))
+      end
+    end
+
+    it "does not reinstall when Skills.lock is already satisfied" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        stub_published_skill(http, root)
+        stub_registry_client(http)
+        root.join("Skillfile").write(<<~RUBY)
+          source "https://rubyskills.org"
+          skill "rails/request-specs", "~> 1.4.0"
+        RUBY
+        expect { described_class.start(["install"]) }.to output(/Installed 1 skill/).to_stdout
+
+        expect {
+          described_class.start(["install"])
+        }.to output(/All skills are up to date with Skills.lock/).to_stdout
+      end
+    end
+
+    it "adds the skill to Skillfile only when --save is given" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        stub_published_skill(http, root)
+        stub_registry_client(http)
+        skillfile = root.join("Skillfile")
+        skillfile.write(<<~RUBY)
+          source "https://rubyskills.org"
+        RUBY
+
+        expect {
+          described_class.start(["install", "rails/request-specs"])
+        }.to output(%r{rails/request-specs 1.4.2 installed}).to_stdout
+        expect(skillfile.read).not_to include("rails/request-specs")
+        expect(root.join("Skills.lock")).not_to exist
+
+        expect {
+          described_class.start(["install", "rails/request-specs", "--save"])
+        }.to output(/Writing Skills.lock/).to_stdout
+
+        expect(skillfile.read).to include('skill "rails/request-specs"')
+        expect(RubySkills::Lockfile.load(root.join("Skills.lock")).locked?("rails/request-specs"))
+          .to be true
+      end
     end
   end
 end

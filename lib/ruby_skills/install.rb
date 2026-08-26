@@ -7,9 +7,8 @@ require "tmpdir"
 module RubySkills
   # Downloads a published skill and extracts it into +.ruby-skills+.
   #
-  # Does not read a Skillfile, write +Skills.lock+, or sync editor adapters.
-  # The install is identified by namespace, name, version, and SHA-256 of the
-  # downloaded +.rskill+ bytes.
+  # Direct install does not read a Skillfile or write +Skills.lock+.
+  # Project-level Skillfile installs use {ProjectInstall}.
   #
   # @example
   #   result = RubySkills::Install.new("rails/request-specs").run
@@ -21,6 +20,88 @@ module RubySkills
       # @return [Boolean]
       def success?
         error.nil? && path
+      end
+    end
+
+    class << self
+      # Canonical on-disk path for a published skill version.
+      #
+      # @param name [String]
+      # @param version [Gem::Version, String]
+      # @param config [Config]
+      # @return [Pathname]
+      def destination(name, version, config:)
+        namespace, skill = split_name(name)
+        config.skills_path.join(namespace, skill, version.to_s)
+      end
+
+      # @param name [String]
+      # @param version [Gem::Version, String]
+      # @param config [Config]
+      # @return [Boolean]
+      def installed?(name, version, config:)
+        destination(name, version, config: config).directory?
+      end
+
+      # Compare two SHA-256 values, with or without a +sha256:+ prefix.
+      #
+      # @param actual [String]
+      # @param expected [String]
+      # @return [void]
+      # @raise [RubySkills::Error]
+      def verify_checksum!(actual, expected)
+        left = hex_digest(actual)
+        right = hex_digest(expected)
+        return if left.casecmp(right).zero?
+
+        raise RubySkills::Error, "Checksum mismatch"
+      end
+
+      # Verify +bytes+ against +checksum+ and extract into +destination+.
+      #
+      # @param bytes [String]
+      # @param checksum [String]
+      # @param destination [Pathname]
+      # @return [String] lowercase SHA-256 of the artifact
+      def extract(bytes:, checksum:, destination:)
+        Dir.mktmpdir("ruby-skills-") do |dir|
+          archive = Pathname.new(dir).join("artifact.rskill")
+          archive.binwrite(bytes)
+          reader = Artifact::Reader.new(archive, expected_checksum: checksum)
+          extract_atomically(reader, destination)
+          reader.checksum
+        end
+      end
+
+      # @param name [String]
+      # @return [Array(String, String)]
+      def split_name(name)
+        namespace, skill, extra = name.to_s.split("/", 3)
+        if extra || namespace.to_s.empty? || skill.to_s.empty?
+          raise RubySkills::Error, "#{name.inspect} must be namespace/name"
+        end
+
+        [namespace, skill]
+      end
+
+      # @param reader [Artifact::Reader]
+      # @param destination [Pathname]
+      # @return [void]
+      def extract_atomically(reader, destination)
+        staging = destination.dirname.join(".tmp-#{destination.basename}-#{Process.pid}")
+        FileUtils.rm_rf(staging)
+        reader.extract_to(staging)
+        FileUtils.mkdir_p(destination.dirname)
+        FileUtils.rm_rf(destination)
+        FileUtils.mv(staging, destination)
+      ensure
+        FileUtils.rm_rf(staging) if staging&.exist?
+      end
+
+      # @param value [String]
+      # @return [String]
+      def hex_digest(value)
+        value.to_s.strip.delete_prefix("sha256:")
       end
     end
 
@@ -60,59 +141,17 @@ module RubySkills
     private
 
     # @param version [RubySkills::Registry::Version]
-    # @return [Array(String, Pathname)] checksum and install directory
+    # @return [Array(String, Pathname)]
     def install_version(version)
       download = @client.download(version.name, version.version)
-      destination = install_path(version)
-
-      Dir.mktmpdir("ruby-skills-") do |dir|
-        archive = Pathname.new(dir).join(archive_name(version))
-        archive.binwrite(download.bytes)
-        reader = Artifact::Reader.new(archive, expected_checksum: version.checksum)
-        extract_atomically(reader, destination)
-        [reader.checksum, destination]
-      end
-    end
-
-    # @param version [RubySkills::Registry::Version]
-    # @return [Pathname]
-    def install_path(version)
-      namespace, skill = split_name(version.name)
-      @config.skills_path.join(namespace, skill, version.version)
-    end
-
-    # @param version [RubySkills::Registry::Version]
-    # @return [String]
-    def archive_name(version)
-      namespace, skill = split_name(version.name)
-      "#{namespace}-#{skill}-#{version.version}.rskill"
-    end
-
-    # @param name [String]
-    # @return [Array(String, String)]
-    def split_name(name)
-      namespace, skill, extra = name.to_s.split("/", 3)
-      if extra || namespace.to_s.empty? || skill.to_s.empty?
-        raise RubySkills::Error, "#{name.inspect} must be namespace/name"
-      end
-
-      [namespace, skill]
-    end
-
-    # Extract to a staging directory, then replace the destination.
-    #
-    # @param reader [RubySkills::Artifact::Reader]
-    # @param destination [Pathname]
-    # @return [void]
-    def extract_atomically(reader, destination)
-      staging = destination.dirname.join(".tmp-#{destination.basename}-#{Process.pid}")
-      FileUtils.rm_rf(staging)
-      reader.extract_to(staging)
-      FileUtils.mkdir_p(destination.dirname)
-      FileUtils.rm_rf(destination)
-      FileUtils.mv(staging, destination)
-    ensure
-      FileUtils.rm_rf(staging) if staging&.exist?
+      self.class.verify_checksum!(download.checksum, version.checksum)
+      destination = self.class.destination(version.name, version.version, config: @config)
+      checksum = self.class.extract(
+        bytes: download.bytes,
+        checksum: version.checksum,
+        destination: destination
+      )
+      [checksum, destination]
     end
   end
 end

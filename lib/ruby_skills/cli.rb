@@ -52,14 +52,23 @@ module RubySkills
       exit 1
     end
 
-    desc "install [Skill]", "Install one skill or all skills from Skillfile"
-    # Install one skill or every skill declared in the Skillfile.
+    desc "install SKILL", "Install a skill from the registry"
+    # Download +SKILL+ from the registry into +.ruby-skills+.
     #
-    # @param skill [String, nil] skill name to install, or +nil+ to install all
+    # Does not read a Skillfile or sync editor adapters.
+    #
+    # @param name [String] +namespace/name+
     # @return [void]
-    # @raise [SystemExit] when installation fails
-    def install(skill = nil)
-      Installer.new.install(skill)
+    # @raise [SystemExit] when the skill cannot be installed
+    def install(name = nil)
+      if name.to_s.strip.empty?
+        say "Error: skill name is required (namespace/name)", :red
+        exit 1
+      end
+
+      result = Install.new(name).run
+      print_install(result)
+      exit 1 unless result.success?
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 1
@@ -438,6 +447,34 @@ module RubySkills
         say ""
         say "Install"
         say "ruby-skills install #{skill.name}"
+      end
+
+      # @api private
+      # @param result [RubySkills::Install::Result]
+      # @return [void]
+      def print_install(result)
+        unless result.success?
+          say "Error: #{result.error.message}", :red
+          return
+        end
+
+        print_install_success(result)
+      end
+
+      # @api private
+      # @param result [RubySkills::Install::Result]
+      # @return [void]
+      def print_install_success(result)
+        say "Resolving #{result.name}..."
+        say ""
+        say "Found #{result.version}"
+        say ""
+        say "Downloading..."
+        say "✓ checksum verified"
+        say "✓ artifact valid"
+        say "✓ installed"
+        say ""
+        say "#{result.name} #{result.version} installed"
       end
 
       # @api private

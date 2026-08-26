@@ -594,14 +594,121 @@ RSpec.describe RubySkills::CLI do
   end
 
   describe "install" do
-    it "exits with an error when the Skillfile is missing" do
-      with_tmp_project do
+    def seed_skill(root, version: "1.4.2")
+      skill = root.join("request-specs")
+      RubySkills::Generators::Skill.new(root: root).create("rails/request-specs")
+      skill.join("references", "http.md").write("# http\n")
+      yaml = YAML.safe_load(skill.join("skill.yml").read)
+      yaml["version"] = version
+      skill.join("skill.yml").write(YAML.dump(yaml))
+      skill
+    end
+
+    def stub_registry_client(http)
+      client = RubySkills::Registry::Client.new(
+        base_url: "https://rubyskills.org",
+        token: nil,
+        http: http
+      )
+      allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+    end
+
+    def stub_published_skill(http, root)
+      skill = seed_skill(root)
+      published = RubySkills::Artifact::Builder.new(
+        root: skill,
+        manifest: RubySkills::Manifest.load(skill),
+        destination: root.join("pkg")
+      ).build
+      checksum = published.checksum
+      http.stub(
+        :get,
+        "/api/v1/skills/rails/request-specs",
+        status: 200,
+        body: {
+          "name" => "rails/request-specs",
+          "summary" => "Practices for writing Rails request specs.",
+          "latest_version" => "1.4.2",
+          "downloads" => 12_842,
+          "categories" => [{ "slug" => "testing", "name" => "Testing" }],
+          "versions" => ["1.4.2"]
+        }
+      )
+      http.stub(
+        :get,
+        "/api/v1/skills/rails/request-specs/versions/1.4.2",
+        status: 200,
+        body: {
+          "name" => "rails/request-specs",
+          "version" => "1.4.2",
+          "checksum" => checksum,
+          "manifest" => {},
+          "published_at" => "2026-08-25T00:00:00Z",
+          "yanked" => false,
+          "download_url" => "https://rubyskills.org/api/v1/skills/rails/request-specs/versions/1.4.2/download"
+        }
+      )
+      http.stub(
+        :get,
+        "/api/v1/skills/rails/request-specs/versions/1.4.2/download",
+        status: 200,
+        body: published.path.binread,
+        headers: { "X-Ruby-Skills-SHA256" => checksum }
+      )
+      published
+    end
+
+    it "prints the install report and extracts into .ruby-skills" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        stub_published_skill(http, root)
+        stub_registry_client(http)
+
         expect {
-          expect {
-            described_class.start(["install"])
-          }.to output(/Error: Skillfile not found/).to_stdout
-        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+          described_class.start(["install", "rails/request-specs"])
+        }.to output(<<~TEXT).to_stdout
+          Resolving rails/request-specs...
+
+          Found 1.4.2
+
+          Downloading...
+          ✓ checksum verified
+          ✓ artifact valid
+          ✓ installed
+
+          rails/request-specs 1.4.2 installed
+        TEXT
+
+        installed = root.join(".ruby-skills", "rails", "request-specs", "1.4.2")
+        expect(installed.join("skill.yml")).to be_file
+        expect(installed.join("SKILL.md")).to be_file
+        expect(root.join("Skills.lock")).not_to exist
       end
+    end
+
+    it "exits 1 when the skill is missing" do
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      http.stub(
+        :get,
+        "/api/v1/skills/rails/missing",
+        status: 404,
+        body: { "error" => { "code" => "not_found", "message" => "Skill not found" } }
+      )
+      stub_registry_client(http)
+
+      expect {
+        expect {
+          described_class.start(["install", "rails/missing"])
+        }.to output(/Error: Skill not found/).to_stdout
+      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+    end
+
+    it "exits 1 when SKILL is omitted" do
+      expect {
+        expect {
+          described_class.start(["install"])
+        }.to output(/Error: skill name is required/).to_stdout
+      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
     end
   end
 end

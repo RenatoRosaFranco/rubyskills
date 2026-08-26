@@ -50,8 +50,11 @@ module RubySkills
     # @return [Array<String>, Object]
     attr_reader :tags
 
-    # @return [Hash, Object]
+    # @return [Hash{String => String}, Object]
     attr_reader :compatibility
+
+    # @return [Hash{String => String}, Object]
+    attr_reader :dependencies
 
     # @return [Array<String>, Object]
     attr_reader :files
@@ -119,6 +122,7 @@ module RubySkills
         "categories" => categories,
         "tags" => tags,
         "compatibility" => compatibility,
+        "dependencies" => dependencies,
         "files" => files,
         "entrypoint" => entrypoint,
         "full_name" => full_name
@@ -176,6 +180,7 @@ module RubySkills
       @categories = @raw.key?("categories") ? @raw["categories"] : []
       @tags = @raw.key?("tags") ? @raw["tags"] : []
       @compatibility = @raw.key?("compatibility") ? @raw["compatibility"] : {}
+      @dependencies = @raw.key?("dependencies") ? @raw["dependencies"] : {}
       @files = @raw.key?("files") ? @raw["files"] : DEFAULT_FILES.dup
     end
 
@@ -200,6 +205,7 @@ module RubySkills
       validate_string_array(:categories, @categories)
       validate_string_array(:tags, @tags)
       validate_compatibility
+      validate_dependencies
       validate_files
       validate_optional_string(:description, @description)
     end
@@ -315,6 +321,78 @@ module RubySkills
     # @return [void]
     def validate_compatibility
       @errors << "compatibility must be a hash" unless @compatibility.is_a?(Hash)
+    end
+
+    # @api private
+    # @return [void]
+    def validate_dependencies
+      unless @dependencies.is_a?(Hash)
+        @errors << "dependencies must be a hash"
+        return
+      end
+
+      @dependencies = @dependencies.each_with_object({}) do |(name, requirement), normalized|
+        validate_dependency(name, requirement, normalized)
+      end
+    end
+
+    # @api private
+    # @param name [Object]
+    # @param requirement [Object]
+    # @param normalized [Hash{String => String}]
+    # @return [void]
+    def validate_dependency(name, requirement, normalized)
+      identifier = name.to_s.strip
+      unless valid_skill_name?(identifier)
+        @errors << "dependencies contains invalid skill name #{name.inspect}"
+        return
+      end
+
+      if identifier == full_name
+        @errors << "a skill cannot depend on itself"
+        return
+      end
+
+      requirement_text = stringify_requirement(requirement)
+      unless valid_requirement?(requirement_text)
+        @errors << "invalid version requirement #{requirement.inspect} for #{identifier}"
+        return
+      end
+
+      normalized[identifier] = requirement_text
+    end
+
+    # @api private
+    # @param name [String]
+    # @return [Boolean]
+    def valid_skill_name?(name)
+      namespace, skill, extra = name.split("/", 3)
+      extra.nil? &&
+        namespace.to_s.match?(IDENTIFIER) &&
+        skill.to_s.match?(IDENTIFIER)
+    end
+
+    # @api private
+    # @param requirement [Object]
+    # @return [String, nil]
+    def stringify_requirement(requirement)
+      return if requirement.nil?
+      return requirement.strip if requirement.is_a?(String)
+      return requirement.to_s if requirement.is_a?(Numeric)
+
+      nil
+    end
+
+    # @api private
+    # @param requirement [String, nil]
+    # @return [Boolean]
+    def valid_requirement?(requirement)
+      return false if requirement.nil? || requirement.empty?
+
+      Gem::Requirement.new(requirement)
+      true
+    rescue Gem::Requirement::BadRequirementError
+      false
     end
 
     # @api private

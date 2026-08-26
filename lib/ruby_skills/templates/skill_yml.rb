@@ -30,6 +30,8 @@ module RubySkills
 
           compatibility: {}
 
+          dependencies: {}
+
           files:
             - SKILL.md
             - references/**

@@ -215,6 +215,32 @@ RSpec.describe RubySkills::Registry::Client do
         yanked: false
       )
       expect(version.download_url).to include("/download")
+      expect(version.dependencies).to eq([])
+    end
+
+    it "parses declared skill dependencies from the version payload" do
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      http.stub(
+        :get,
+        "/api/v1/skills/rails/request-specs/versions/2.0.0",
+        status: 200,
+        body: version_payload.merge(
+          "version" => "2.0.0",
+          "dependencies" => [
+            { "name" => "rails/conventions", "requirement" => ">= 1.0" },
+            { "name" => "rspec/core-practices", "requirement" => "~> 2.0" }
+          ]
+        )
+      )
+
+      version = client_for(http).get_version("rails/request-specs", "2.0.0")
+
+      expect(version.dependencies).to eq(
+        [
+          { "name" => "rails/conventions", "requirement" => ">= 1.0" },
+          { "name" => "rspec/core-practices", "requirement" => "~> 2.0" }
+        ]
+      )
     end
   end
 

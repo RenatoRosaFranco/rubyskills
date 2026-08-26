@@ -79,6 +79,7 @@ RSpec.describe RubySkills::Manifest do
           "ruby" => ">= 3.2",
           "rails" => ">= 7.1"
         )
+        expect(manifest.dependencies).to eq({})
         expect(manifest.files).to eq(["SKILL.md", "references/**"])
       end
     end
@@ -110,6 +111,7 @@ RSpec.describe RubySkills::Manifest do
         expect(manifest.categories).to eq([])
         expect(manifest.tags).to eq([])
         expect(manifest.compatibility).to eq({})
+        expect(manifest.dependencies).to eq({})
         expect(manifest.files).to eq(["SKILL.md"])
       end
     end
@@ -122,7 +124,8 @@ RSpec.describe RubySkills::Manifest do
           "name" => "request-specs",
           "namespace" => "rails",
           "full_name" => "rails/request-specs",
-          "entrypoint" => "SKILL.md"
+          "entrypoint" => "SKILL.md",
+          "dependencies" => {}
         )
       end
     end
@@ -329,6 +332,112 @@ RSpec.describe RubySkills::Manifest do
           "categories must be an array of strings",
           "tags must be an array of strings"
         )
+      end
+    end
+  end
+
+  describe "dependencies" do
+    it "parses skill identities and Gem requirements" do
+      with_tmp_project do |root|
+        yaml = <<~YAML
+          name: request-specs
+          namespace: rails
+          version: 2.0.0
+          summary: Request specs.
+          entrypoint: SKILL.md
+          dependencies:
+            rails/conventions: ">= 1.0"
+            rspec/core-practices: "~> 2.0"
+        YAML
+
+        manifest = load_skill(root, yaml: yaml)
+
+        expect(manifest).to be_valid
+        expect(manifest.dependencies).to eq(
+          "rails/conventions" => ">= 1.0",
+          "rspec/core-practices" => "~> 2.0"
+        )
+        expect(manifest.to_h["dependencies"]).to eq(manifest.dependencies)
+      end
+    end
+
+    it "rejects a non-hash dependencies field" do
+      with_tmp_project do |root|
+        yaml = <<~YAML
+          name: request-specs
+          namespace: rails
+          version: 0.1.0
+          summary: Bad dependencies.
+          entrypoint: SKILL.md
+          dependencies:
+            - rails/conventions
+        YAML
+
+        manifest = load_skill(root, yaml: yaml)
+
+        expect(manifest).not_to be_valid
+        expect(manifest.errors).to include("dependencies must be a hash")
+      end
+    end
+
+    it "rejects invalid dependency names" do
+      with_tmp_project do |root|
+        yaml = <<~YAML
+          name: request-specs
+          namespace: rails
+          version: 0.1.0
+          summary: Bad dependency name.
+          entrypoint: SKILL.md
+          dependencies:
+            Rails/Conventions: ">= 1.0"
+        YAML
+
+        manifest = load_skill(root, yaml: yaml)
+
+        expect(manifest).not_to be_valid
+        expect(manifest.errors).to include(
+          a_string_including("invalid skill name")
+        )
+      end
+    end
+
+    it "rejects invalid Gem requirements" do
+      with_tmp_project do |root|
+        yaml = <<~YAML
+          name: request-specs
+          namespace: rails
+          version: 0.1.0
+          summary: Bad requirement.
+          entrypoint: SKILL.md
+          dependencies:
+            rails/conventions: "~~~"
+        YAML
+
+        manifest = load_skill(root, yaml: yaml)
+
+        expect(manifest).not_to be_valid
+        expect(manifest.errors).to include(
+          a_string_including("invalid version requirement")
+        )
+      end
+    end
+
+    it "rejects a self-dependency" do
+      with_tmp_project do |root|
+        yaml = <<~YAML
+          name: request-specs
+          namespace: rails
+          version: 0.1.0
+          summary: Self dependency.
+          entrypoint: SKILL.md
+          dependencies:
+            rails/request-specs: ">= 0"
+        YAML
+
+        manifest = load_skill(root, yaml: yaml)
+
+        expect(manifest).not_to be_valid
+        expect(manifest.errors).to include("a skill cannot depend on itself")
       end
     end
   end

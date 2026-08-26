@@ -101,6 +101,7 @@ module RubySkills
     # Published version metadata.
     Version = Struct.new(
       :name, :version, :checksum, :manifest, :published_at, :yanked, :download_url,
+      :dependencies,
       keyword_init: true
     ) do
       # @param payload [Hash]
@@ -113,7 +114,12 @@ module RubySkills
           manifest: payload["manifest"] || {},
           published_at: payload["published_at"],
           yanked: payload["yanked"],
-          download_url: payload["download_url"]
+          download_url: payload["download_url"],
+          dependencies: Array(payload["dependencies"]).filter_map { |row|
+            next unless row.is_a?(Hash)
+
+            { "name" => row["name"], "requirement" => row["requirement"] }
+          }
         )
       end
     end

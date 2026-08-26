@@ -31,7 +31,8 @@ RSpec.describe RubySkills::Generators::Skill do
           version: "0.1.0",
           summary: "TODO",
           entrypoint: "SKILL.md",
-          files: ["SKILL.md", "references/**"]
+          files: ["SKILL.md", "references/**"],
+          dependencies: {}
         )
       end
     end

@@ -8,7 +8,7 @@ RSpec.describe RubySkills::Resolver do
         FileUtils.mkdir_p(skill_dir)
         skill_dir.join("SKILL.md").write("# skill\n")
 
-        skill = RubySkills::Manifest::Skill.new(
+        skill = RubySkills::Skillfile::Skill.new(
           name: "rails-performance",
           path: skill_dir.to_s
         )
@@ -25,7 +25,7 @@ RSpec.describe RubySkills::Resolver do
 
     it "raises when the local path is not a directory" do
       with_tmp_project do |root|
-        skill = RubySkills::Manifest::Skill.new(
+        skill = RubySkills::Skillfile::Skill.new(
           name: "missing",
           path: root.join("does-not-exist").to_s
         )
@@ -37,7 +37,7 @@ RSpec.describe RubySkills::Resolver do
     end
 
     it "raises when the skill has no usable source" do
-      skill = RubySkills::Manifest::Skill.new(name: "orphan")
+      skill = RubySkills::Skillfile::Skill.new(name: "orphan")
 
       expect {
         described_class.new.resolve(skill)

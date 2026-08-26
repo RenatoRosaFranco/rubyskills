@@ -5,17 +5,17 @@ require "tmpdir"
 module RubySkills
   # Turns a declared skill into a local directory that can be installed.
   #
-  # Local skills are resolved from {RubySkills::Manifest::Skill#path}.
+  # Local skills are resolved from {RubySkills::Skillfile::Skill#path}.
   # Remote skills are cloned from GitHub into a temporary directory.
   #
   # @example Resolve a declared skill
-  #   skill = RubySkills::Manifest::Skill.new(
+  #   skill = RubySkills::Skillfile::Skill.new(
   #     name: "rails-performance",
   #     path: "./skills/rails-performance"
   #   )
   #   RubySkills::Resolver.new.resolve(skill)
   #
-  # @see RubySkills::Manifest::Skill
+  # @see RubySkills::Skillfile::Skill
   # @since 0.1.0
   class Resolver
     # Skill directory ready to be installed.
@@ -35,7 +35,7 @@ module RubySkills
 
     # Resolve a skill from a local path or a remote repository.
     #
-    # @param skill [RubySkills::Manifest::Skill] declared skill to resolve
+    # @param skill [RubySkills::Skillfile::Skill] declared skill to resolve
     # @return [ResolvedSkill] skill directory ready to install
     # @raise [RubySkills::Error] if the skill has no usable source
     def resolve(skill)
@@ -52,7 +52,7 @@ module RubySkills
     private
 
     # @api private
-    # @param skill [RubySkills::Manifest::Skill]
+    # @param skill [RubySkills::Skillfile::Skill]
     # @return [ResolvedSkill]
     # @raise [RubySkills::Error] if the local skill path is not a directory
     def resolve_local(skill)
@@ -71,7 +71,7 @@ module RubySkills
     end
 
     # @api private
-    # @param skill [RubySkills::Manifest::Skill]
+    # @param skill [RubySkills::Skillfile::Skill]
     # @return [ResolvedSkill] skill cloned into a temporary directory
     # @raise [RubySkills::Error] if the GitHub repository cannot be cloned
     def resolve_remote(skill)

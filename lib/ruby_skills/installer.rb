@@ -12,7 +12,7 @@ module RubySkills
   # @example Install one skill
   #   RubySkills::Installer.new.install("rails-performance")
   #
-  # @see RubySkills::Manifest
+  # @see RubySkills::Skillfile
   # @see RubySkills::Resolver
   # @since 0.1.0
   class Installer
@@ -36,21 +36,21 @@ module RubySkills
 
     # @api private
     # @param skill_name [String, nil]
-    # @return [Array<RubySkills::Manifest::Skill>]
+    # @return [Array<RubySkills::Skillfile::Skill>]
     # @raise [RubySkills::Error] if the named skill is not in the Skillfile
     def load_skills(skill_name)
-      manifest = Manifest.new.load!
+      skillfile = Skillfile.new.load!
 
-      return manifest.skills if skill_name.nil?
+      return skillfile.skills if skill_name.nil?
 
-      skill = manifest.skills.find { |declared| declared.name == skill_name }
+      skill = skillfile.skills.find { |declared| declared.name == skill_name }
       raise RubySkills::Error, "Skill `#{skill_name}` is not in the Skillfile" unless skill
 
       [skill]
     end
 
     # @api private
-    # @param skill [RubySkills::Manifest::Skill]
+    # @param skill [RubySkills::Skillfile::Skill]
     # @return [void]
     def install_skill(skill)
       resolved = Resolver.new.resolve(skill)

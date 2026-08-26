@@ -191,6 +191,33 @@ RSpec.describe RubySkills::Resolver do
       expect(updated.find("rails/conventions").version).to eq(Gem::Version.new("1.3.3"))
     end
 
+    it "updates only the named skill when update is a skill identifier" do
+      client = catalog { |registry|
+        registry.add("rails/conventions", "1.3.2")
+        registry.add("rails/conventions", "1.3.5")
+        registry.add("rails/request-specs", "2.1.4")
+        registry.add("rails/request-specs", "2.1.8")
+      }
+      skillfile = skillfile_with(
+        dep("rails/conventions", "~> 1.0"),
+        dep("rails/request-specs", "~> 2.1.0")
+      )
+      lockfile = lockfile_with(
+        locked("rails/conventions", "1.3.2"),
+        locked("rails/request-specs", "2.1.4")
+      )
+
+      resolution = resolve(
+        skillfile,
+        client: client,
+        lockfile: lockfile,
+        update: "rails/conventions"
+      )
+
+      expect(resolution.find("rails/conventions").version).to eq(Gem::Version.new("1.3.5"))
+      expect(resolution.find("rails/request-specs").version).to eq(Gem::Version.new("2.1.4"))
+    end
+
     it "resolves again when the Skillfile requirement no longer matches the lock" do
       client = catalog { |registry|
         registry.add("rails/conventions", "1.3.2")

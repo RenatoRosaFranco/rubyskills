@@ -22,14 +22,15 @@ module RubySkills
   #   resolution.find("rails/conventions").version
   #
   # @since 0.1.0
-  class Resolver
+  class Resolver # rubocop:disable Metrics/ClassLength
     # Raised when a declared skill cannot be resolved to a published version.
     class Error < RubySkills::Error; end
 
     # @param skillfile [Skillfile]
     # @param client [Registry::Client]
     # @param lockfile [Lockfile, nil]
-    # @param update [Boolean] when true, pick the latest compatible version
+    # @param update [Boolean, String] +true+ re-resolves every skill; a name
+    #   re-resolves only that skill and keeps every other lock pin
     def initialize(skillfile:, client:, lockfile: nil, update: false)
       @skillfile = skillfile
       @client = client
@@ -63,9 +64,15 @@ module RubySkills
     # @param dependency [Dependency]
     # @return [LockedSkill, nil]
     def locked_skill(dependency)
-      return if @update || @lockfile.nil?
+      return if @lockfile.nil? || updating?(dependency)
 
       @lockfile.find(dependency.name)
+    end
+
+    # @param dependency [Dependency]
+    # @return [Boolean]
+    def updating?(dependency)
+      @update == true || @update == dependency.name
     end
 
     # @param dependency [Dependency]

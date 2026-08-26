@@ -885,4 +885,153 @@ RSpec.describe RubySkills::CLI do
       end
     end
   end
+
+  describe "update" do
+    def stub_registry_client(http)
+      client = RubySkills::Registry::Client.new(
+        base_url: "https://rubyskills.org",
+        token: nil,
+        http: http
+      )
+      allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+    end
+
+    def publish_versions(http, root, name:, versions:)
+      artifacts = versions.to_h { |version|
+        namespace, skill = name.split("/", 2)
+        dir = root.join("src", namespace, skill, version)
+        FileUtils.mkdir_p(dir)
+        RubySkills::Generators::Skill.new(root: dir).create(name, in_place: true)
+        yaml = YAML.safe_load(dir.join("skill.yml").read)
+        yaml["version"] = version
+        dir.join("skill.yml").write(YAML.dump(yaml))
+        artifact = RubySkills::Artifact::Builder.new(
+          root: dir,
+          manifest: RubySkills::Manifest.load(dir),
+          destination: root.join("pkg", skill, version)
+        ).build
+        [version, artifact]
+      }
+      namespace, skill = name.split("/", 2)
+      http.stub(
+        :get,
+        "/api/v1/skills/#{namespace}/#{skill}",
+        status: 200,
+        body: {
+          "name" => name,
+          "summary" => name,
+          "latest_version" => versions.last,
+          "downloads" => 1,
+          "categories" => [],
+          "versions" => versions
+        }
+      )
+      artifacts.each do |version, artifact|
+        http.stub(
+          :get,
+          "/api/v1/skills/#{namespace}/#{skill}/versions/#{version}",
+          status: 200,
+          body: {
+            "name" => name,
+            "version" => version,
+            "checksum" => artifact.checksum,
+            "manifest" => {},
+            "published_at" => "2026-08-01T00:00:00Z",
+            "yanked" => false,
+            "download_url" =>
+              "https://rubyskills.org/api/v1/skills/#{name}/versions/#{version}/download"
+          }
+        )
+        http.stub(
+          :get,
+          "/api/v1/skills/#{namespace}/#{skill}/versions/#{version}/download",
+          status: 200,
+          body: artifact.path.binread,
+          headers: { "X-Ruby-Skills-SHA256" => artifact.checksum }
+        )
+      end
+      artifacts
+    end
+
+    def write_conventions_project(root, artifacts, version:)
+      root.join("Skillfile").write(<<~RUBY)
+        source "https://rubyskills.org"
+        skill "rails/conventions", "~> 1.0"
+      RUBY
+      RubySkills::Lockfile.new(
+        source: "https://rubyskills.org",
+        skills: [
+          RubySkills::LockedSkill.new(
+            name: "rails/conventions",
+            version: version,
+            checksum: "sha256:#{artifacts.fetch(version).checksum}"
+          )
+        ],
+        dependencies: [
+          RubySkills::Dependency.new(
+            name: "rails/conventions",
+            requirement: Gem::Requirement.new("~> 1.0")
+          )
+        ]
+      ).write(root.join("Skills.lock"))
+    end
+
+    it "updates a named Skillfile dependency and rewrites Skills.lock" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        artifacts = publish_versions(
+          http,
+          root,
+          name: "rails/conventions",
+          versions: %w[1.3.2 1.3.5]
+        )
+        stub_registry_client(http)
+        write_conventions_project(root, artifacts, version: "1.3.2")
+
+        expect {
+          described_class.start(["update", "rails/conventions"])
+        }.to output(<<~TEXT).to_stdout
+          Updating rails/conventions...
+
+          1.3.2 -> 1.3.5
+
+          ✓ downloaded
+          ✓ checksum verified
+          ✓ installed
+          ✓ Skills.lock updated
+        TEXT
+
+        lockfile = RubySkills::Lockfile.load(root.join("Skills.lock"))
+        expect(lockfile.find("rails/conventions").version).to eq(Gem::Version.new("1.3.5"))
+      end
+    end
+
+    it "says when the named skill is already at the newest compatible version" do
+      with_tmp_project do |root|
+        http = RubySkillsSpec::FakeRegistryHttp.new
+        artifacts = publish_versions(
+          http,
+          root,
+          name: "rails/conventions",
+          versions: %w[1.3.5]
+        )
+        stub_registry_client(http)
+        write_conventions_project(root, artifacts, version: "1.3.5")
+
+        expect {
+          described_class.start(["update", "rails/conventions"])
+        }.to output("rails/conventions is already at the newest compatible version.\n").to_stdout
+      end
+    end
+
+    it "exits 1 when no Skillfile exists" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(["update"])
+          }.to output(/Error:.*Skillfile not found/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+  end
 end

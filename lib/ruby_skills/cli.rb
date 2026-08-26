@@ -125,8 +125,12 @@ module RubySkills
       exit 1
     end
 
-    desc "update [SKILL]", "Update one skill or all installed skills"
-    # Update one skill or every installed skill.
+    desc "update [SKILL]", "Update Skillfile dependencies to the newest compatible versions"
+    # Re-resolve Skillfile dependencies against the registry.
+    #
+    # With no +SKILL+, every declared skill is updated to the newest version
+    # allowed by its requirement. With +SKILL+, only that dependency moves;
+    # every other lock pin is kept.
     #
     # @param skill [String, nil] skill name to update, or +nil+ to update all
     # @return [void]

@@ -8,11 +8,11 @@ module RubySkills
   #
   # The default command is {#help}. +-h+ and +--help+ are aliases for it.
   #
-  # @example Initialize a project
-  #   RubySkills::CLI.start(["init"])
+  # @example Create a skill
+  #   RubySkills::CLI.start(["init", "rails/request-specs"])
   #
   # @since 0.1.0
-  class CLI < Thor
+  class CLI < Thor # rubocop:disable Metrics/ClassLength
     # Display name used in Thor help banners.
     package_name "ruby-skills"
 
@@ -32,19 +32,21 @@ module RubySkills
       super
     end
 
-    desc "init", "Initialize Ruby Skills in the current project"
-    # Create a Skillfile and +.ruby-skills+ directory in the current project.
+    desc "init [NAME]", "Create a new Ruby Skill or initialize an empty directory"
+    # Scaffold a skill from +namespace/name+, or prompt when +NAME+ is omitted
+    # inside an empty directory.
     #
+    # @param name [String, nil] +namespace/name+, or +nil+ to prompt
     # @return [void]
     # @raise [SystemExit] when initialization fails
-    def init
-      config = Config.new
+    def init(name = nil)
+      result = if name
+                 Generators::Skill.new.create(name)
+               else
+                 create_skill_interactively
+               end
 
-      config.initialize_project!
-
-      say "Ruby Skills initialized"
-      say " Skillfile created"
-      say " .ruby-skills directory created"
+      print_created_skill(result)
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 1
@@ -126,7 +128,7 @@ module RubySkills
       say "ruby-skills #{RubySkills::VERSION}"
     end
 
-    no_commands do
+    no_commands do # rubocop:disable Metrics/BlockLength
       # @api private
       # @param skills [Hash{String => Hash}] lockfile skill map
       # @return [Hash] JSON-serializable list payload
@@ -140,6 +142,48 @@ module RubySkills
             }
           end
         }
+      end
+
+      # @api private
+      # @return [RubySkills::Generators::Skill::Result]
+      # @raise [RubySkills::Error] if the current directory is not empty
+      def create_skill_interactively
+        unless empty_directory?(Dir.pwd)
+          raise RubySkills::Error,
+                "Current directory is not empty. Pass namespace/name, " \
+                "e.g. ruby-skills init rails/request-specs"
+        end
+
+        namespace = ask("Namespace:").to_s.strip
+        skill_name = ask("Name:").to_s.strip
+
+        Generators::Skill.new.create("#{namespace}/#{skill_name}", in_place: true)
+      end
+
+      # @api private
+      # @param path [String]
+      # @return [Boolean]
+      def empty_directory?(path)
+        Pathname.new(path).children.empty?
+      end
+
+      # @api private
+      # @param result [RubySkills::Generators::Skill::Result]
+      # @return [void]
+      def print_created_skill(result)
+        folder = result.in_place ? "." : result.name
+
+        say "Created Ruby Skill:"
+        say ""
+        say "  #{folder}/"
+        say "  ├── skill.yml"
+        say "  ├── SKILL.md"
+        say "  └── references/"
+        say ""
+        say "Next:"
+        say ""
+        say "  cd #{result.name}" unless result.in_place
+        say "  ruby-skills validate"
       end
     end
   end

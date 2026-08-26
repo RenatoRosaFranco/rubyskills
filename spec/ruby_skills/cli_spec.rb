@@ -72,14 +72,73 @@ RSpec.describe RubySkills::CLI do
   end
 
   describe "init" do
-    it "creates Skillfile and .ruby-skills" do
+    it "creates a skill from namespace/name" do
       with_tmp_project do |root|
         expect {
-          described_class.start(["init"])
-        }.to output(/Ruby Skills initialized/).to_stdout
+          described_class.start(["init", "rails/request-specs"])
+        }.to output(
+          a_string_including(
+            "Created Ruby Skill:",
+            "request-specs/",
+            "skill.yml",
+            "SKILL.md",
+            "references/",
+            "cd request-specs",
+            "ruby-skills validate"
+          )
+        ).to_stdout
 
-        expect(root.join("Skillfile")).to be_file
-        expect(root.join(".ruby-skills")).to be_directory
+        expect(root.join("request-specs", "skill.yml")).to be_file
+        expect(root.join("request-specs", "SKILL.md")).to be_file
+        expect(root.join("request-specs", "references")).to be_directory
+      end
+    end
+
+    it "prompts for namespace and name in an empty directory" do
+      with_tmp_project do |root|
+        cli = described_class.new
+        allow(cli).to receive(:ask).and_return("rails", "request-specs")
+
+        expect { cli.init }.to output(/Created Ruby Skill:/).to_stdout
+
+        expect(cli).to have_received(:ask).with("Namespace:")
+        expect(cli).to have_received(:ask).with("Name:")
+        expect(root.join("skill.yml")).to be_file
+        expect(root.join("request-specs")).not_to exist
+      end
+    end
+
+    it "refuses to overwrite an existing skill directory" do
+      with_tmp_project do |root|
+        root.join("request-specs").mkdir
+
+        expect {
+          expect {
+            described_class.start(["init", "rails/request-specs"])
+          }.to output(/Directory already exists: request-specs/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "rejects an invalid skill name" do
+      with_tmp_project do
+        expect {
+          expect {
+            described_class.start(%w[init request-specs])
+          }.to output(%r{namespace/name}).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+      end
+    end
+
+    it "rejects init without a name in a non-empty directory" do
+      with_tmp_project do |root|
+        root.join("README.md").write("keep\n")
+
+        expect {
+          expect {
+            described_class.start(["init"])
+          }.to output(/Current directory is not empty/).to_stdout
+        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
       end
     end
   end

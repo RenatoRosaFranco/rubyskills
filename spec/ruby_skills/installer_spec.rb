@@ -2,7 +2,7 @@
 
 RSpec.describe RubySkills::Installer do
   let(:skill) do
-    RubySkills::Skillfile::Skill.new(
+    RubySkills::LegacySkillfile::Skill.new(
       name: "rails-performance",
       path: "/tmp/rails-performance",
       version: "0.1.0"
@@ -10,13 +10,13 @@ RSpec.describe RubySkills::Installer do
   end
 
   let(:manifest) do
-    instance_double(RubySkills::Skillfile, skills: [skill]).tap do |double|
+    instance_double(RubySkills::LegacySkillfile, skills: [skill]).tap do |double|
       allow(double).to receive(:load!).and_return(double)
     end
   end
 
   before do
-    allow(RubySkills::Skillfile).to receive(:new).and_return(manifest)
+    allow(RubySkills::LegacySkillfile).to receive(:new).and_return(manifest)
   end
 
   describe "#install" do

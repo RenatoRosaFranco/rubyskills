@@ -12,7 +12,7 @@ module RubySkills
   # @example Install one skill
   #   RubySkills::Installer.new.install("rails-performance")
   #
-  # @see RubySkills::Skillfile
+  # @see RubySkills::LegacySkillfile
   # @see RubySkills::Resolver
   # @since 0.1.0
   class Installer
@@ -36,10 +36,10 @@ module RubySkills
 
     # @api private
     # @param skill_name [String, nil]
-    # @return [Array<RubySkills::Skillfile::Skill>]
+    # @return [Array<RubySkills::LegacySkillfile::Skill>]
     # @raise [RubySkills::Error] if the named skill is not in the Skillfile
     def load_skills(skill_name)
-      skillfile = Skillfile.new.load!
+      skillfile = LegacySkillfile.new.load!
 
       return skillfile.skills if skill_name.nil?
 
@@ -50,7 +50,7 @@ module RubySkills
     end
 
     # @api private
-    # @param skill [RubySkills::Skillfile::Skill]
+    # @param skill [RubySkills::LegacySkillfile::Skill]
     # @return [void]
     def install_skill(skill)
       resolved = Resolver.new.resolve(skill)

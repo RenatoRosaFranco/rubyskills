@@ -1,93 +1,202 @@
 # frozen_string_literal: true
 
 require "pathname"
+require "rubygems"
 
 module RubySkills
-  # Loads and evaluates a project +Skillfile+.
+  # Project-level declared intent: registry origin and skill dependencies.
   #
-  # The Skillfile is Ruby DSL. Each +skill+ declaration becomes a
-  # {RubySkills::Skillfile::Skill} stored in {#skills}.
+  # Parsing evaluates a small Ruby DSL inside a restricted context. It does
+  # not talk to the network or install anything.
   #
-  # @example Load the Skillfile from the current project
-  #   skillfile = RubySkills::Skillfile.new.load!
-  #   skillfile.skills
+  # @example
+  #   skillfile = RubySkills::Skillfile.load("Skillfile")
+  #   skillfile.find("rails/request-specs").requirement
   #
   # @since 0.1.0
-  class Skillfile
-    # Declared skill entry loaded from a Skillfile.
-    #
-    # @!attribute [rw] name
-    #   @return [String] skill identifier
-    # @!attribute [rw] github
-    #   @return [String, nil] GitHub repository in +owner/name+ form
-    # @!attribute [rw] path
-    #   @return [String, nil] local filesystem path to the skill
-    # @!attribute [rw] version
-    #   @return [String, nil] optional pinned version
-    Skill = Struct.new(
-      :name,
-      :github,
-      :path,
-      :version,
-      keyword_init: true
-    )
+  class Skillfile # rubocop:disable Metrics/ClassLength
+    # Filename searched by {Skillfile.find}.
+    FILENAME = "Skillfile"
 
-    # @return [Array<Skill>] skills declared in the Skillfile
-    attr_reader :skills
+    class << self
+      # Load and parse a Skillfile from an explicit path.
+      #
+      # @param path [String, Pathname]
+      # @param default_source [String, nil] overrides the configured registry
+      # @return [Skillfile]
+      # @raise [Error]
+      def load(path, default_source: nil)
+        file = Pathname.new(path)
+        raise missing_error(file) unless file.file?
 
-    # @param path [Pathname, String] path to the Skillfile
-    def initialize(path: default_skill_path)
+        parse(file, default_source: default_source)
+      end
+
+      # Walk from +starting_directory+ toward the filesystem root until a
+      # Skillfile is found.
+      #
+      # @param starting_directory [String, Pathname]
+      # @param default_source [String, nil]
+      # @return [Skillfile]
+      # @raise [Error] if no Skillfile exists in that ancestry
+      def find(starting_directory = Dir.pwd, default_source: nil)
+        start = Pathname.new(starting_directory).expand_path
+        dir = start.directory? ? start : start.dirname
+
+        loop do
+          candidate = dir.join(FILENAME)
+          return load(candidate, default_source: default_source) if candidate.file?
+
+          parent = dir.parent
+          break if parent == dir
+
+          dir = parent
+        end
+
+        raise Error.new(
+          "Skillfile not found (searched from #{start})",
+          filename: start.join(FILENAME)
+        )
+      end
+
+      private
+
+      # @param path [Pathname]
+      # @param default_source [String, nil]
+      # @return [Skillfile]
+      def parse(path, default_source:)
+        skillfile = new(
+          path: path,
+          source: default_source || configured_registry,
+          dependencies: []
+        )
+        Dsl.new(skillfile).instance_eval(path.read, path.to_s, 1)
+        skillfile
+      rescue Error
+        raise
+      rescue SyntaxError, NameError, ArgumentError, TypeError => e
+        raise Error.new("Malformed Skillfile: #{e.message}", filename: path)
+      end
+
+      # @return [String]
+      def configured_registry
+        env = ENV.fetch(Registry::URL_ENV, "").to_s.strip
+        return env.chomp("/") unless env.empty?
+
+        UserConfig.load.registry
+      end
+
+      # @param path [Pathname]
+      # @return [Error]
+      def missing_error(path)
+        Error.new("Skillfile not found", filename: path)
+      end
+    end
+
+    # @return [Pathname]
+    attr_reader :path
+
+    # @return [String]
+    attr_reader :source
+
+    # @return [Array<Dependency>]
+    attr_reader :dependencies
+
+    # @param path [Pathname]
+    # @param source [String]
+    # @param dependencies [Array<Dependency>]
+    def initialize(path:, source:, dependencies:)
       @path = Pathname.new(path)
-      @skills = []
+      @source = source
+      @dependencies = dependencies
+      @source_declared = false
     end
 
-    # Read and evaluate the Skillfile, populating {#skills}.
-    #
-    # @return [Skillfile] self
-    # @raise [RubySkills::Error] if the Skillfile is missing or invalid
-    def load!
-      unless @path.exist?
-        raise RubySkills::Error,
-              "Skillfile not found. Run `ruby-skills init` first."
-      end
-
-      instance_eval(@path.read, @path.to_s, 1)
-
-      self
-    rescue SyntaxError => e
-      raise RubySkills::Error, "Invalid Skillfile: #{e.message}"
+    # @param name [String]
+    # @return [Dependency, nil]
+    def find(name)
+      @dependencies.find { |dependency| dependency.name == name }
     end
 
-    # Declare a skill in the Skillfile DSL.
-    #
-    # Exactly one source must be provided: +github+ or +path+.
-    #
-    # @param name [String] skill identifier
-    # @param github [String, nil] GitHub repository in +owner/name+ form
-    # @param path [String, nil] local filesystem path to the skill
-    # @param version [String, nil] optional pinned version
-    # @return [void]
-    # @raise [RubySkills::Error] if neither +github+ nor +path+ is given
-    def skill(name, github: nil, path: nil, version: nil)
-      unless github || path
-        raise RubySkills::Error,
-              "#{name}: either github or path: must be provided"
-      end
+    # @param name [String]
+    # @return [Boolean]
+    def include?(name)
+      !find(name).nil?
+    end
 
-      @skills << Skill.new(
-        name: name,
-        github: github,
-        path: path,
-        version: version
-      )
+    # @return [Hash]
+    def to_h
+      {
+        source: @source,
+        dependencies: @dependencies.map do |dependency|
+          { name: dependency.name, requirement: dependency.requirement.to_s }
+        end
+      }
     end
 
     private
 
-    # @api private
-    # @return [Pathname] default path used when none is given to {#initialize}
-    def default_skill_path
-      Config.new.skillfile_path
+    # @param url [String]
+    # @param location [Thread::Backtrace::Location, nil]
+    # @return [void]
+    def declare_source(url, location:)
+      raise_at(location, "Duplicated source declaration") if @source_declared
+
+      raw = url.to_s.strip
+      raise_at(location, "Invalid source #{url.inspect}") if raw.empty?
+
+      @source = raw.chomp("/")
+      @source_declared = true
+    end
+
+    # @param name [Object]
+    # @param requirement [Object]
+    # @param location [Thread::Backtrace::Location, nil]
+    # @return [void]
+    def declare_skill(name, requirement, location:)
+      identifier = name.to_s.strip
+      raise_at(location, "Invalid skill identifier #{name.inspect}") unless valid_name?(identifier)
+      raise_at(location, "Duplicated skill #{identifier.inspect}") if include?(identifier)
+
+      @dependencies << Dependency.new(
+        name: identifier,
+        requirement: parse_requirement(identifier, requirement, location: location)
+      )
+    end
+
+    # @param name [String]
+    # @return [Boolean]
+    def valid_name?(name)
+      namespace, skill, extra = name.split("/", 3)
+      extra.nil? &&
+        namespace.to_s.match?(Manifest::IDENTIFIER) &&
+        skill.to_s.match?(Manifest::IDENTIFIER)
+    end
+
+    # @param name [String]
+    # @param requirement [Object]
+    # @param location [Thread::Backtrace::Location, nil]
+    # @return [Gem::Requirement]
+    def parse_requirement(name, requirement, location:)
+      return Gem::Requirement.default if requirement.nil? || requirement.to_s.strip.empty?
+
+      Gem::Requirement.new(requirement)
+    rescue Gem::Requirement::BadRequirementError
+      raise_at(
+        location,
+        "Invalid version requirement #{requirement.inspect} for #{name}"
+      )
+    end
+
+    # @param location [Thread::Backtrace::Location, nil]
+    # @param message [String]
+    # @return [void]
+    def raise_at(location, message)
+      raise Error.new(
+        message,
+        filename: location&.path || @path,
+        line: location&.lineno
+      )
     end
   end
 end

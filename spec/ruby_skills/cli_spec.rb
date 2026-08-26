@@ -73,14 +73,14 @@ RSpec.describe RubySkills::CLI do
       end
     end
 
-    it "explains how to pass a token when --token is omitted" do
+    it "does not treat --token without a value as a login" do
       with_user_config_home do
         expect {
           expect {
-            described_class.start(["login"])
+            described_class.start(["login", "--token"])
           }.to output(
             a_string_including(
-              "Browser sign-in is not available yet.",
+              "Pass a token with --token",
               "ruby-skills login --token rsk_..."
             )
           ).to_stdout
@@ -90,20 +90,33 @@ RSpec.describe RubySkills::CLI do
       end
     end
 
-    it "does not treat --token without a value as a login" do
-      with_user_config_home do
-        expect {
-          expect {
-            described_class.start(["login", "--token"])
-          }.to output(
-            a_string_including(
-              "Browser sign-in is not available yet.",
-              "ruby-skills login --token rsk_..."
-            )
-          ).to_stdout
-        }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+    it "opens a browser login and stores the issued token" do
+      with_user_config_home do |directory|
+        issued = "rsk_#{"b" * 64}"
+        uri = "https://rubyskills.org/cli/authorize/abc"
+        http = RubySkillsSpec::FakeRegistryHttp.new.stub_device_login(issued: issued, uri: uri)
+        client = RubySkills::Registry::Client.new(
+          base_url: "https://rubyskills.org",
+          token: nil,
+          http: http
+        )
+        allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+        allow(RubySkills::Browser).to receive(:open)
 
-        expect(RubySkills::Credentials.load.token).to be_nil
+        expect {
+          described_class.start(["login"])
+        }.to output(
+          a_string_including(
+            "Opening a browser to authenticate.",
+            uri,
+            "Waiting for confirmation...",
+            "Logged in."
+          )
+        ).to_stdout
+
+        expect(RubySkills::Credentials.load.token).to eq(issued)
+        expect(RubySkills::Browser).to have_received(:open).with(uri)
+        expect(directory.join("credentials.yml")).to be_file
       end
     end
   end
@@ -601,7 +614,7 @@ RSpec.describe RubySkills::CLI do
               a_string_including(
                 "Publishing rails/request-specs 0.1.0",
                 "✗ not logged in.",
-                "ruby-skills login --token rsk_..."
+                "ruby-skills login"
               )
             ).to_stdout
           }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }

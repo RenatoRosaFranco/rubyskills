@@ -44,6 +44,23 @@ module RubySkills
     # Issued API token from +POST /api/v1/auth/token+.
     Token = Struct.new(:token, :token_type, keyword_init: true)
 
+    # Pending browser login from +POST /api/v1/auth/device+.
+    DeviceLogin = Struct.new(
+      :device_code, :verification_uri, :expires_in, :interval,
+      keyword_init: true
+    ) do
+      # @param payload [Hash]
+      # @return [DeviceLogin]
+      def self.from_payload(payload)
+        new(
+          device_code: payload["device_code"],
+          verification_uri: payload["verification_uri"],
+          expires_in: payload["expires_in"].to_i,
+          interval: payload.fetch("interval", 5).to_i
+        )
+      end
+    end
+
     # Registry category.
     Category = Struct.new(:slug, :name, keyword_init: true) do
       # @param payload [Hash]

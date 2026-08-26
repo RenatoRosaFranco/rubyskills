@@ -215,25 +215,27 @@ module RubySkills
       exit 1
     end
 
-    desc "login", "Save a registry API token"
+    desc "login", "Log in to the registry via browser"
     option :token, type: :string,
-                   desc: "API token issued by the registry (rsk_...)"
+                   desc: "API token issued by the registry (rsk_...), skips the browser"
     # Store a registry token in +~/.config/ruby-skills/credentials.yml+.
     #
-    # Device authorization (browser code) is not implemented yet; pass
-    # +--token+ for this cycle.
+    # With no options, start a device login: print a URL, open the browser,
+    # and poll until the grant is approved. Pass +--token+ to paste a token.
     #
     # @return [void]
-    # @raise [SystemExit] when +--token+ is missing or invalid
+    # @raise [SystemExit] when login fails
     def login
       token = options[:token]
-      unless token.is_a?(String) && !token.strip.empty?
+      if token == true || (token.is_a?(String) && token.strip.empty?)
         print_login_help
         exit 1
       end
 
-      Credentials.load.update_token!(token)
-      say "Logged in."
+      result = Login.new(token: token.is_a?(String) ? token : nil)
+                    .run { |session| print_device_login(session) }
+      print_login_result(result)
+      exit 1 unless result.success?
     rescue RubySkills::Error => e
       say "Error: #{e.message}", :red
       exit 1
@@ -390,7 +392,7 @@ module RubySkills
         say ""
         say "Run:"
         say ""
-        say "  ruby-skills login --token rsk_..."
+        say "  ruby-skills login"
       end
 
       # @api private
@@ -510,11 +512,35 @@ module RubySkills
       # @api private
       # @return [void]
       def print_login_help
-        say "Browser sign-in is not available yet."
+        say "Pass a token with --token, or run ruby-skills login to open a browser."
         say ""
-        say "Create a token on the registry and run:"
-        say ""
+        say "  ruby-skills login"
         say "  ruby-skills login --token rsk_..."
+      end
+
+      # @api private
+      # @param session [RubySkills::Registry::DeviceLogin]
+      # @return [void]
+      def print_device_login(session)
+        say "Opening a browser to authenticate."
+        say ""
+        say "If the browser does not open, visit:"
+        say ""
+        say "  #{session.verification_uri}"
+        say ""
+        say "Waiting for confirmation..."
+      end
+
+      # @api private
+      # @param result [RubySkills::Login::Result]
+      # @return [void]
+      def print_login_result(result)
+        if result.success?
+          say "Logged in."
+          return
+        end
+
+        say "Error: #{result.error.message}", :red
       end
 
       # @api private

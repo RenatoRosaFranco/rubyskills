@@ -86,6 +86,61 @@ RSpec.describe RubySkills::Registry::Client do
     end
   end
 
+  describe "device authorization" do
+    def device_payload
+      {
+        "device_code" => "device-secret",
+        "verification_uri" => "https://rubyskills.org/cli/authorize/abc",
+        "expires_in" => 600,
+        "interval" => 0
+      }
+    end
+
+    it "starts a browser login grant" do
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      http.stub(:post, "/api/v1/auth/device", status: 200, body: device_payload)
+
+      session = client_for(http).start_device_authorization
+
+      expect(session).to have_attributes(
+        device_code: "device-secret",
+        verification_uri: "https://rubyskills.org/cli/authorize/abc",
+        expires_in: 600,
+        interval: 0
+      )
+    end
+
+    it "returns nil while authorization is pending" do
+      http = RubySkillsSpec::FakeRegistryHttp.new
+      http.stub(
+        :post,
+        "/api/v1/auth/device/token",
+        status: 400,
+        body: {
+          "error" => { "code" => "authorization_pending", "message" => "Authorization pending" }
+        }
+      )
+
+      expect(client_for(http).poll_device_authorization("device-secret")).to be_nil
+    end
+
+    it "waits until the browser grant is approved" do
+      issued = "rsk_#{"c" * 64}"
+      http = RubySkillsSpec::FakeRegistryHttp.new.stub_device_login(issued: issued)
+      client = client_for(http)
+      session = client.start_device_authorization
+      slept = []
+
+      token = client.wait_for_device_authorization(
+        session,
+        sleeper: ->(seconds) { slept << seconds }
+      )
+
+      expect(token.token).to eq(issued)
+      expect(slept).to eq([0])
+    end
+  end
+
   describe "#get_skill" do
     it "returns public skill metadata" do
       http = RubySkillsSpec::FakeRegistryHttp.new

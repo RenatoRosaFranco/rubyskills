@@ -55,6 +55,61 @@ module RubySkills
         Token.new(token: @token, token_type: data["token_type"] || "Bearer")
       end
 
+      # Start a browser device login (gcloud/Heroku style).
+      #
+      # @return [DeviceLogin]
+      # @raise [Error]
+      def start_device_authorization
+        DeviceLogin.from_payload(json_body(request(:post, "/api/v1/auth/device")))
+      end
+
+      # Poll until the user approves the CLI in the browser.
+      #
+      # @param session [DeviceLogin]
+      # @param sleeper [#call]
+      # @param clock [#call]
+      # @return [Token]
+      # @raise [Error]
+      def wait_for_device_authorization(session, sleeper: method(:sleep), clock: -> { Time.now })
+        deadline = clock.call + [session.expires_in, 1].max
+        interval = [session.interval.to_i, 0].max
+
+        loop do
+          token = poll_device_authorization(session.device_code)
+          return token if token
+
+          if clock.call >= deadline
+            raise Error.new("Device code has expired", code: "expired_token", status: 400)
+          end
+
+          sleeper.call(interval)
+        end
+      end
+
+      # One poll of +POST /api/v1/auth/device/token+.
+      #
+      # @param device_code [String]
+      # @return [Token, nil] +nil+ when authorization is still pending
+      # @raise [Error]
+      def poll_device_authorization(device_code)
+        response = @http.request(
+          method: :post,
+          path: "/api/v1/auth/device/token",
+          headers: default_headers,
+          json: { device_code: device_code }
+        )
+        if (200..299).cover?(response.status)
+          data = json_body(response)
+          @token = data.fetch("token")
+          return Token.new(token: @token, token_type: data["token_type"] || "Bearer")
+        end
+
+        error = registry_error(response)
+        return if error.code == "authorization_pending"
+
+        raise error
+      end
+
       # Publish a +.rskill+ artifact. Requires {#token}.
       #
       # @param name [String] +namespace/skill+
@@ -256,12 +311,18 @@ module RubySkills
       def raise_for_status!(response)
         return if (200..299).cover?(response.status)
 
+        raise registry_error(response)
+      end
+
+      # @param response [Response]
+      # @return [Error]
+      def registry_error(response)
         payload = parse_json(response.body)
         error = payload.is_a?(Hash) ? payload["error"] : nil
         message = error.is_a?(Hash) ? error["message"] : nil
         code = error.is_a?(Hash) ? error["code"] : nil
 
-        raise Error.new(
+        Error.new(
           message || "Registry request failed (HTTP #{response.status})",
           code: code || "http_error",
           status: response.status

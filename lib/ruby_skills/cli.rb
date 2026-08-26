@@ -151,6 +151,21 @@ module RubySkills
       exit 1
     end
 
+    desc "publish [PATH]", "Publish a local Ruby Skill to the registry"
+    # Validate, package, and upload +PATH+ as an immutable registry version.
+    #
+    # @param path [String] skill directory (defaults to +.+ )
+    # @return [void]
+    # @raise [SystemExit] when validation or upload fails
+    def publish(path = ".")
+      result = Publish.new(path).run
+      print_publish(result)
+      exit 1 unless result.success?
+    rescue RubySkills::Error => e
+      say "Error: #{e.message}", :red
+      exit 1
+    end
+
     desc "config [KEY] [VALUE]", "Get or set user configuration"
     # Show or persist user settings from +~/.config/ruby-skills/config.yml+.
     #
@@ -290,6 +305,67 @@ module RubySkills
           say ""
           say "Skill is invalid."
         end
+      end
+
+      # @api private
+      # @param result [RubySkills::Publish::Result]
+      # @return [void]
+      def print_publish(result)
+        say "Publishing #{result.label}"
+        say ""
+
+        case result.status
+        when :published
+          print_publish_success(result)
+        when :conflict
+          print_publish_conflict(result)
+        when :unauthenticated
+          print_publish_login
+        when :invalid
+          result.failures.each do |failure|
+            say "✗ #{failure}"
+          end
+          say ""
+          say "Skill is invalid."
+        else
+          say "✗ #{result.error}"
+        end
+      end
+
+      # @api private
+      # @param result [RubySkills::Publish::Result]
+      # @return [void]
+      def print_publish_success(result)
+        say "✓ manifest validated"
+        say "✓ artifact built"
+        say "✓ checksum verified"
+        say "✓ uploaded"
+        say "✓ published"
+        say ""
+        say "#{result.published.name} #{result.published.version} published successfully"
+        say ""
+        say result.published.url
+      end
+
+      # @api private
+      # @param result [RubySkills::Publish::Result]
+      # @return [void]
+      def print_publish_conflict(result)
+        say "✗ #{result.label} already exists."
+        say ""
+        say "Published versions are immutable."
+        say ""
+        say "Increment the version in skill.yml and try again."
+      end
+
+      # @api private
+      # @return [void]
+      def print_publish_login
+        say "✗ not logged in."
+        say ""
+        say "Run:"
+        say ""
+        say "  ruby-skills login --token rsk_..."
       end
 
       # @api private

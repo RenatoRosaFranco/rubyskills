@@ -410,6 +410,115 @@ RSpec.describe RubySkills::CLI do
     end
   end
 
+  describe "publish" do
+    def seed_skill(root)
+      skill = root.join("request-specs")
+      RubySkills::Generators::Skill.new(root: root).create("rails/request-specs")
+      skill.join("references", "http.md").write("# http\n")
+      skill
+    end
+
+    def stub_registry_client(http, token: "rsk_secret")
+      client = RubySkills::Registry::Client.new(
+        base_url: "https://rubyskills.org",
+        token: token,
+        http: http
+      )
+      allow(RubySkills::Registry::Client).to receive(:new).and_return(client)
+    end
+
+    it "prints the success report after a registry upload" do
+      with_user_config_home do
+        with_tmp_project do |root|
+          skill = seed_skill(root)
+          http = RubySkillsSpec::FakeRegistryHttp.new
+          http.stub(
+            :post,
+            "/api/v1/skills/rails/request-specs/versions",
+            status: 201,
+            body: {
+              "name" => "rails/request-specs",
+              "version" => "0.1.0",
+              "checksum" => "abc",
+              "published_at" => "2026-08-25T00:00:00Z",
+              "url" => "https://rubyskills.org/rails/request-specs",
+              "version_url" => "https://rubyskills.org/rails/request-specs/versions/0.1.0"
+            }
+          )
+          stub_registry_client(http)
+
+          expect {
+            described_class.start(["publish", skill.to_s])
+          }.to output(
+            a_string_including(
+              "Publishing rails/request-specs 0.1.0",
+              "✓ manifest validated",
+              "✓ artifact built",
+              "✓ checksum verified",
+              "✓ uploaded",
+              "✓ published",
+              "rails/request-specs 0.1.0 published successfully",
+              "https://rubyskills.org/rails/request-specs"
+            )
+          ).to_stdout
+        end
+      end
+    end
+
+    it "explains that published versions are immutable on conflict" do
+      with_user_config_home do
+        with_tmp_project do |root|
+          skill = seed_skill(root)
+          http = RubySkillsSpec::FakeRegistryHttp.new
+          http.stub(
+            :post,
+            "/api/v1/skills/rails/request-specs/versions",
+            status: 409,
+            body: {
+              "error" => {
+                "code" => "version_already_exists",
+                "message" => "rails/request-specs 0.1.0 already exists"
+              }
+            }
+          )
+          stub_registry_client(http)
+
+          expect {
+            expect {
+              described_class.start(["publish", skill.to_s])
+            }.to output(
+              a_string_including(
+                "✗ rails/request-specs 0.1.0 already exists.",
+                "Published versions are immutable.",
+                "Increment the version in skill.yml and try again."
+              )
+            ).to_stdout
+          }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+        end
+      end
+    end
+
+    it "asks the user to log in when no token is stored" do
+      with_user_config_home do
+        with_tmp_project do |root|
+          skill = seed_skill(root)
+
+          expect {
+            expect {
+              described_class.start(["publish", skill.to_s])
+            }.to output(
+              a_string_including(
+                "Publishing rails/request-specs 0.1.0",
+                "✗ not logged in.",
+                "ruby-skills login --token rsk_..."
+              )
+            ).to_stdout
+          }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+        end
+      end
+    end
+  end
+
   describe "install" do
     it "exits with an error when the Skillfile is missing" do
       with_tmp_project do

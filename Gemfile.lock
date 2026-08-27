@@ -66,6 +66,7 @@ GEM
       regexp_parser (>= 2.0)
       rubocop (~> 1.86, >= 1.86.2)
     ruby-progressbar (1.13.0)
+    simplecov (1.1.1)
     thor (1.5.0)
     unicode-display_width (3.2.0)
       unicode-emoji (~> 4.1)
@@ -88,6 +89,7 @@ DEPENDENCIES
   rubocop-performance (~> 1.20)
   rubocop-rspec (~> 3.0)
   ruby-skills!
+  simplecov (~> 1.0)
   webmock (~> 3.26)
   yard (~> 0.9)
 
@@ -122,6 +124,7 @@ CHECKSUMS
   rubocop-rspec (3.10.2) sha256=0b3e2ecc592cd10ecbf0095bb58d1e357905276e069643523cc19eb7495f65e2
   ruby-progressbar (1.13.0) sha256=80fc9c47a9b640d6834e0dc7b3c94c9df37f08cb072b7761e4a71e22cff29b33
   ruby-skills (0.1.0)
+  simplecov (1.1.1) sha256=25825ef13f0b2e74694d769817dad6ab8e90131dabdaa666e522fea105521e78
   thor (1.5.0) sha256=e3a9e55fe857e44859ce104a84675ab6e8cd59c650a49106a05f55f136425e73
   unicode-display_width (3.2.0) sha256=0cdd96b5681a5949cdbc2c55e7b420facae74c4aaf9a9815eee1087cb1853c42
   unicode-emoji (4.2.0) sha256=519e69150f75652e40bf736106cfbc8f0f73aa3fb6a65afe62fefa7f80b0f80f

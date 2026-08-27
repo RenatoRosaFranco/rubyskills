@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "digest"
-require "set"
 
 RSpec.describe RubySkills::RemovalPlanner do
   def dep(name, requirement = ">= 0")

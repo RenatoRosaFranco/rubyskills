@@ -54,7 +54,7 @@ module RubySkills
       end
       private_class_method :gzip
 
-      # {Gem::Package::TarWriter} with frozen tar metadata.
+      # `Gem::Package::TarWriter` with frozen tar metadata.
       class Writer < Gem::Package::TarWriter
         # @param name [String]
         # @param mode [Integer]

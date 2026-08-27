@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rspec:
+    name: RSpec (Ruby ${{ matrix.ruby }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # Keep in sync with `required_ruby_version` in ruby-skills.gemspec.
+        ruby: ["3.2", "3.3", "3.4", "4.0"]
+        include:
+          # The CLI touches the filesystem heavily; catch macOS-specific path issues.
+          - os: macos-latest
+            ruby: "3.4"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Run RSpec
+        run: bundle exec rspec
+
+  rubocop:
+    name: RuboCop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop --parallel
+
+  yard:
+    name: YARD
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Build docs
+        run: bundle exec yard doc --fail-on-warning
+
+  gem:
+    name: Gem build & smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+
+      # `spec.files` comes from `git ls-files`, so a file that exists locally but
+      # was never committed passes `rspec` and silently disappears from the gem.
+      # Installing the packaged gem and running the executable outside Bundler is
+      # the only check that catches that.
+      - name: Build gem
+        run: gem build ruby-skills.gemspec --output "$RUNNER_TEMP/ruby-skills.gem"
+
+      - name: Install packaged gem # zizmor: ignore[adhoc-packages]
+        run: gem install --local "$RUNNER_TEMP/ruby-skills.gem"
+
+      - name: Smoke test executable
+        run: |
+          ruby-skills version
+          ruby-skills help
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+
+      - name: Run bundler-audit # zizmor: ignore[adhoc-packages]
+        run: |
+          gem install bundler-audit --no-document
+          bundle-audit check --update
+
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        run: >
+          docker run --rm -v "$PWD:/repo" --workdir /repo
+          rhysd/actionlint:1.7.12 -color
+
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pipx run zizmor==1.29.0 --color=always .github/workflows
+
+  # Single required status check for branch protection. Depending on this job
+  # instead of the matrix entries means changing the matrix never silently
+  # breaks the protection rules.
+  ci-ok:
+    name: CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [rspec, rubocop, yard, gem, audit, workflow-lint]
+    if: always()
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -Eq '"result": "(failure|cancelled)"'; then
+            exit 1
+          fi

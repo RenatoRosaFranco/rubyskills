@@ -7,7 +7,7 @@ module RubySkills
   #
   # Direct Skillfile requirements are combined with requirements declared by
   # selected SkillVersions. One version is chosen per skill: the highest
-  # {Gem::Version} that satisfies every requirement, unless a still-valid
+  # `Gem::Version` that satisfies every requirement, unless a still-valid
   # Skills.lock pin is kept (install is not update).
   #
   # Yanked and unpublished releases are ignored. Registry metadata is cached

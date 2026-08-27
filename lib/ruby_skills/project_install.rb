@@ -219,7 +219,7 @@ module RubySkills
 
     # @param prepared [Array<Prepared>]
     # @param resolution [Resolution]
-    # @param skillfile [Skillfile]
+    # @param _skillfile [Skillfile]
     # @param config [Config]
     # @return [void]
     def commit(prepared, resolution, _skillfile, config)

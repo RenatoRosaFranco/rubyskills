@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module RubySkills
   # Decides which locked and installed skills are still required after a
   # Skillfile dependency is removed.

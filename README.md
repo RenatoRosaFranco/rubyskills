@@ -20,7 +20,7 @@ ruby-skills publish  ─────────►  rails/request-specs
 
 ## Requirements
 
-- Ruby 3.1 or later
+- Ruby 3.2 or later
 - [Thor](https://github.com/rails/thor) `~> 1.3` (pulled in by the gem)
 
 ## Install

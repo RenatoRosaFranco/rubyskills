@@ -1,0 +1,11 @@
+# Configuration for zizmor (https://docs.zizmor.sh), run by the CI "Workflow lint" job.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # Trusted first-party orgs: a tag pin is acceptable. Everything else must
+        # be pinned to a commit SHA.
+        "actions/*": ref-pin
+        "ruby/*": ref-pin
+        "rubygems/*": ref-pin
+        "*": hash-pin

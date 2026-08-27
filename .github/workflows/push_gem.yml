@@ -9,6 +9,10 @@
 #   Environment: release
 #
 # Also create a GitHub Environment named "release" on this repository.
+#
+# Release flow: bump lib/ruby_skills/version.rb, move the CHANGELOG.md
+# "Unreleased" section to a versioned one, merge to main, then push a matching
+# tag (`git tag v0.1.0 && git push origin v0.1.0`).
 name: Push gem
 
 on:
@@ -20,16 +24,27 @@ on:
 permissions:
   contents: read
 
+# Never cancel a release that is already running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   push:
     name: Push gem to RubyGems.org
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     permissions:
-      contents: read
-      id-token: write
+      contents: write # create the GitHub Release (and the tag, on workflow_dispatch)
+      id-token: write # OIDC Trusted Publishing
 
     environment: release
+
+    env:
+      # Fail loudly if Gemfile.lock is out of sync instead of rewriting it
+      # (`rake release` refuses to run on a dirty tree).
+      BUNDLE_FROZEN: "true"
 
     steps:
       - name: Check out
@@ -37,19 +52,21 @@ jobs:
         with:
           persist-credentials: false
 
+      # No bundler-cache here: a poisoned cache must never reach a release build.
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.3"
-          bundler-cache: true
+          ruby-version: .ruby-version
+
+      - name: Install dependencies
+        run: bundle install --jobs 4
 
       - name: Verify tag matches gem version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           expected="v$(ruby -e 'require_relative "lib/ruby_skills/version"; print RubySkills::VERSION')"
-          actual="${GITHUB_REF_NAME}"
-          if [ "$expected" != "$actual" ]; then
-            echo "Tag $actual does not match VERSION $expected"
+          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match VERSION $expected"
             exit 1
           fi
 
@@ -57,13 +74,37 @@ jobs:
         run: bundle exec rspec
 
       - name: Run RuboCop
-        run: bundle exec rubocop
+        run: bundle exec rubocop --parallel
 
-      - name: Configure RubyGems credentials
-        uses: rubygems/configure-rubygems-credentials@v1.0.0
+      - name: Build and smoke test packaged gem # zizmor: ignore[adhoc-packages]
+        run: |
+          gem build ruby-skills.gemspec --output "$RUNNER_TEMP/ruby-skills.gem"
+          gem install --local "$RUNNER_TEMP/ruby-skills.gem"
+          ruby-skills version
 
-      - name: Build gem
-        run: bundle exec rake build
+      # Runs `rake release`: builds into pkg/, pushes to RubyGems.org with a
+      # sigstore attestation and waits until the version is visible. Tagging is
+      # skipped when the tag already exists (the normal tag-push case).
+      - name: Release gem
+        uses: rubygems/release-gem@v1
 
-      - name: Push gem
-        run: gem push pkg/*.gem
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$RUNNER_TEMP/notes.md"
+          awk -v version="$version" '
+            /^## \[/ { in_section = ($0 ~ "^## \\[" version "\\]"); next }
+            in_section { print }
+          ' CHANGELOG.md > "$notes"
+
+          if [ -s "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" pkg/*.gem \
+              --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$notes"
+          else
+            echo "No CHANGELOG.md section for $version; using generated notes"
+            gh release create "$GITHUB_REF_NAME" pkg/*.gem \
+              --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+          fi
